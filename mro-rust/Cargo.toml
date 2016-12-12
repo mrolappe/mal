@@ -1,0 +1,21 @@
+[package]
+name = "mro-rust"
+version = "0.1.0"
+authors = ["Marco Rolappe <m_rolappe@gmx.net>"]
+
+[lib]
+name = "mal"
+path = "src/mal/lib.rs"
+
+# [[bin]]
+# name = "step0"
+# path = "src/bin/step0_repl.rs"
+
+# [[bin]]
+# name = "step1_read_print"
+# path = "src/bin/step1_read_print.rs"
+
+[dependencies]
+regex = "0.1.80"
+lazy_static = "0.2.2"
+itertools = "0.5.4"
