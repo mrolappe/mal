@@ -88,13 +88,14 @@ fn tokenizer(input: &str) -> Vec<&str> {
         .map(|cap| cap.at(1).unwrap())
         .collect();
 
-    // println!("tokens: {:?}", tokens);
+    trace!("tokens: {:?}", tokens);
 
     tokens
 }
 
 
-fn read_form(reader: &mut Reader) -> Option<MalData<'static>> {  // FIXME lifetime
+fn read_form<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
+    // FIXME lifetime
     // erstes token des readers untersuchen
     // unterscheidung nach erstem zeichen des tokens
     let result = match reader.peek() {
@@ -131,41 +132,49 @@ fn read_list(reader: &mut Reader) -> Option<MalData<'static>> {  // FIXME lifeti
         match reader.peek() {
             // die ergebnisse werden in einer liste gesammelt
             Some(")") => {
-                return Some(MalData::List(items));
+                reader.next();
+                return Ok(MalData::List(items));
             }
 
             Some(_) => {
                 let form = read_form(reader);
-                // println!("form: {:?}", &form);
+                debug!("form: {:?}", &form);
                 items.push(form.unwrap());
             }
 
             // tokens (vorzeitiges EOF ist fehler)
             None => {
-                println!("expected ')', got EOF");
-                return None;    // TODO fehlerbehandlung}
+                return Err("expected ')', got EOF".to_owned())
             }
         }
     }
 }
 
 
-fn read_atom(reader: &mut Reader) -> Option<MalData<'static>> {  // FIXME lifetime
-    let atom = reader.next().unwrap();
+fn read_atom<'r>(reader: &mut Reader) -> Option<MalData<'r>> {
+    // FIXME lifetime
+    let atom = reader.next();
 
     lazy_static!{
-        static ref NUM_RE: Regex = Regex::new(r"^\d+$").unwrap();
+        static ref NUM_RE: Regex = Regex::new(r"^-?\d+$").unwrap();
     }
 
     // wert eines entsprechenden datentyps (z.b. ganzzahl oder symbol)
     // zurueckliefern anhand des token-inhalts
-    if NUM_RE.is_match(atom) {
-        // println!("read_atom, atom => {:?}", &atom);
-        Some(MalData::Number(atom.parse().ok().unwrap()))    // TODO fehlerbehandlung 
-    } else if atom.chars().next().unwrap() == ':' {
-        Some(MalData::Keyword('\u{29e}'.to_string() + atom))
-    }
-    else {
-        Some(MalData::Symbol(atom.to_string()))
+    match atom {
+        Some(e) if e.is_empty() => Some(MalData::Nothing),
+
+        Some(num) if NUM_RE.is_match(num) => {
+            debug!("read_atom, atom => {:?}", &atom);
+            Some(MalData::Number(num.parse().ok().unwrap()))    // TODO fehlerbehandlung
+        }
+
+        Some(kw) if kw.starts_with(":") => {
+            Some(MalData::Keyword('\u{29e}'.to_string() + kw))
+        }
+
+        Some(other) => Some(MalData::Symbol(other.to_string())),
+
+        None => None
     }
 }

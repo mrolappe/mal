@@ -1,5 +1,10 @@
 extern crate mal;
 
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+use log::LogLevel::Trace;
+
 use std::io::{self, Write};
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -12,85 +17,97 @@ use mal::common::MalFun;
 use mal::common::NativeFunction;
 use mal::common::NativeFunctionSelector;
 
-fn read(input: &str) -> Option<MalData> {
+fn read(input: &str) -> Result<MalData, String> {
     reader::read_str(input)
 }
 
 type IntFunction = fn(&[MalData]) -> i32;
 
-fn call_function<'d>(f: &'d MalFun, args: &[MalData]) -> MalData<'d> {  // FIXME lifetime
-    let result = f.call::<'d>(args);
+fn call_function<'d>(f: &'d MalFun, args: &[MalData]) -> MalData<'d> {
+    // FIXME lifetime
+    let result = f.call(args);
 
-    for arg in args { println!("arg: {:?}", arg) };
+    if log_enabled!(Trace) {
+        for arg in args { trace!("arg: {:?}", arg) };
+    }
 
-    println!("result: {:?}", result);
+    trace!("call_function, result: {:?}", result);
     result
-        
-}
 
-fn call_custom_function(args: &[MalData]) -> MalData<'static> { // FIXME lifetime
-    println!("custom func: {:?}", args.get(0));
-
-    for arg in args { println!("arg: {:?}", arg) };
-
-    // println!("result: {}", result);
-    MalData::Number(0)
-    
 }
 
 type Environment = HashMap<Box<String>, Box<MalFun>>;
 
-fn eval<'a>(ast: &'a MalData, env: &'a Environment) -> MalData<'a> { // FIXME lifetime
+fn eval<'a>(ast: &'a MalData, env: &'a Environment) -> Result<MalData<'a>, String> {
+    // FIXME lifetime
     match *ast {
-        MalData::List(ref list) =>
+        MalData::List(ref list) => {
             if list.is_empty() {
-                ast.clone()
+                Ok(ast.clone())
             } else {
                 let eval_list = eval_ast(ast, env);
+                if eval_list.is_err() {
+                    return eval_list;
+                }
+                debug!("eval, eval_list: {:?}", eval_list);
 
-                match eval_list {
+                match eval_list.unwrap() {
                     MalData::List(l) => {
                         match l.first() {
                             Some(&MalData::Function(f)) => {
-                                call_function(f, &l[1..])
-                            },
+                                let res = call_function(f, &l[1..]);
+                                Ok(res)
+                            }
 
-                            _ => panic!("FIXME fehlerbehandlung; erstes element ist keine funktion")
+                            _ => Err(format!("first element is not a function ({:?})", l.first())),
                         }
                     }
 
-                    _ => panic!("Scheiss die Wand an!, {:?}", eval_list)
+                    foo => panic!("Scheiss die Wand an!, {:?}", foo),
                 }
-            },
+            }
+        }
 
-        _ => eval_ast(ast, env)
+        _ => {
+            let eval_res = eval_ast(ast, env);
+            debug!("eval, eval_res: {:?}", eval_res);
+            eval_res
+        }
     }
 }
 
-fn eval_ast<'a>(ast: &'a MalData, env: &'a Environment) -> MalData<'a> { // FIXME lifetime
+fn eval_ast<'a>(ast: &'a MalData, env: &'a Environment) -> Result<MalData<'a>, String> {
+    // FIXME lifetime
     // TODO Result als rueckgabetyp
 
     match *ast {
         MalData::Symbol(ref sym) => {
-            // FIXME fehlermeldung, wenn symbol nicht gebunden
-
-            let val = env.get(sym).unwrap();
-            MalData::Function(val.deref())
-            
+            env.get(sym)
+                .ok_or(format!("'{}' not found", sym))
+                .and_then(|v| Ok(MalData::Function(v.deref())))
         }
 
-        MalData::List(ref l) => {
-            let mut eval_list : Vec<MalData> = Vec::new();
+        MalData::List(ref lst) => {
+            let mut eval_list: Vec<MalData> = Vec::new();
 
-            for e in l {
-                eval_list.push(eval(&e, env))
+            for el in lst {
+                let res = eval(&el, env);
+
+                if res.is_err() {
+                    return res;
+                } else {
+                    eval_list.push(res.unwrap());
+                }
             }
 
-            MalData::List(eval_list)
-            
-        },
+            debug!("eval_ast, eval_list: {:?}", eval_list);
+            Ok(MalData::List(eval_list))
+        }
 
-        _ => ast.clone()
+        _ => {
+            debug!("eval_ast, ast: {:?}", ast);
+            Ok(ast.clone())
+        }
     }
 }
 
@@ -109,17 +126,29 @@ fn rep(input: &str) -> String {
     env_insert_native_fun(repl_env, "*", NativeFunctionSelector::Mul);
     env_insert_native_fun(repl_env, "/", NativeFunctionSelector::Div);  // TODO fehlerbehandlug
 
-    if let Some(read_out) = read(input) {
-        let eval_out = eval(&read_out, &repl_env);
-        let print_out = print(&eval_out);
-        print_out
-    } else {
-        "err".to_string()    // TODO erweiterte fehlerbehandlung
+    let read_out = read(input);
+    trace!("rep, read_out: {:?}", read_out);
+
+    if read_out.is_err() {
+        return Err(read_out.unwrap_err());
     }
 
+    {
+        let foo = &read_out.unwrap();
+        let eval_out = eval(foo, &repl_env);
+
+        if eval_out.is_ok() {
+            Ok(print(&eval_out.unwrap()))
+        } else {
+            Err(eval_out.unwrap_err())
+        }
+    }
 }
 
 fn main() {
+    env_logger::init().unwrap();
+    info!("env_logger");
+
     loop {
         let mut input = String::new();
 
