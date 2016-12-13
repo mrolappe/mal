@@ -1,33 +1,7 @@
-use std::fmt;
 use regex::Regex;
 use regex::Captures;
 
 use common::MalData;
-
-// type IntFunction = Fn(&[MalData]) -> i32;
-
-// impl fmt::Debug for MalData {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//     write!(f, "Hi: ")
-// }
-// }
-
-// impl Clone for MalData {
-//     fn clone(&self) -> MalData {
-//         match self {
-//             &MalData::Symbol(s) => MalData::Symbol(s.clone()),
-
-//             &MalData::Keyword(k) => MalData::Keyword(k.clone()),
-
-//             &MalData::Number(n) => MalData::Number(n.clone()),
-
-//             &MalData::List(l) => MalData::List(l.clone()),
-
-//             &MalData::Function(f) => MalData::Function(f.clone())
-//         } 
-//     } 
-// }
-
 
 
 struct Reader<'r> {

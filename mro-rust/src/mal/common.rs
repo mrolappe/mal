@@ -66,19 +66,3 @@ fn number_arg(arg: &MalData) -> i32 {
 
     number
 }
-
-fn ef_add(a: i32, b: i32) -> i32 {
-    a + b
-}
-
-fn ef_sub(a: i32, b: i32) -> i32 {
-    a - b
-}
-
-fn ef_mul(a: i32, b: i32) -> i32 {
-    a * b
-}
-
-fn ef_div(a: i32, b: i32) -> i32 {
-    i32::checked_div(a, b).unwrap()
-}
