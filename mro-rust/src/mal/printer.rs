@@ -4,6 +4,7 @@ use common::MalData;
 
 pub fn pr_str(data: &MalData) -> String {
     match *data {
+        MalData::Nothing => "".to_owned(),
         MalData::Symbol(ref sym) => sym.clone(),  // TODO symbolname
         MalData::Keyword(ref kw) => kw.chars().skip(1).collect(),
         MalData::Number(ref num) => num.to_string(),  // TODO zahl

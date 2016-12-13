@@ -9,6 +9,7 @@ pub trait MalFun : fmt::Debug  {
 #[derive(Debug)]
 #[derive(Clone)]
 pub enum MalData<'d> {
+    Nothing,
     Symbol(String),
     Keyword(String),
     Number(i32),

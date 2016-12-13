@@ -8,7 +8,7 @@ use mal::printer;
 use mal::common::MalData;
 
 fn read(input: &str) -> Option<MalData> {
-    reader::read_str(input)
+    reader::read_str(input).ok()
 }
 
 

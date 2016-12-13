@@ -115,10 +115,13 @@ fn print(input: &MalData) -> String {
     printer::pr_str(input)
 }
 
-fn env_insert_native_fun<'e>(env: &'e mut Environment, name: &str, selector: NativeFunctionSelector) {
-    env.insert(Box::new(name.to_owned()), Box::new(NativeFunction::new(name, selector))); 
+fn env_insert_native_fun<'e>(env: &'e mut Environment,
+                             name: &str,
+                             selector: NativeFunctionSelector) {
+    env.insert(Box::new(name.to_owned()),
+               Box::new(NativeFunction::new(name, selector)));
 }
-fn rep(input: &str) -> String {
+fn rep(input: &str) -> Result<String, String> {
     let repl_env: &mut Environment = &mut HashMap::new();
 
     env_insert_native_fun(repl_env, "+", NativeFunctionSelector::Add);
@@ -160,8 +163,12 @@ fn main() {
             Ok(_) => {}
         }
 
-        let output = rep(&input);
+        match rep(&input) {
+            Ok(ref e) if e.is_empty() => {}
 
-        println!("{}", output);
+            Ok(res) => println!("{}", res),
+
+            Err(err) => println!("error: {}", err),
+        }
     }
 }

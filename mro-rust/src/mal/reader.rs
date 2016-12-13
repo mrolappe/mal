@@ -61,7 +61,7 @@ impl<'r> Reader<'r> {
     }
 }
 
-pub fn read_str(input: &str) -> Option<MalData> {
+pub fn read_str(input: &str) -> Result<MalData, String> {
     // tokenizer aufrufen
     let tokens = tokenizer(input);
 
@@ -105,18 +105,19 @@ fn read_form<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
             read_list(reader)
         }
 
-        Some(";") => {
-            println!("kommentar");
-            None    // TODO spezieller rueckgabewert eines speziellen rueckgabetyps?
-        }
-
         // sonst read_atom mit reader aufrufen
         Some(_) => {
-            let atom = read_atom(reader);
-            atom
+            if reader.peek().unwrap().starts_with(";") {
+                reader.next();
+                Ok(MalData::Nothing)    // TODO spezieller rueckgabewert eines speziellen rueckgabetyps?
+            } else {
+                let atom = read_atom(reader);
+                atom.ok_or("failed to read atom".to_owned())
+            }
+
         }
 
-        None => None,    // TODO
+        None => Ok(MalData::Nothing),    // TODO
     };
 
     // rueckgabe: mal datentyp
@@ -124,7 +125,8 @@ fn read_form<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
 }
 
 
-fn read_list(reader: &mut Reader) -> Option<MalData<'static>> {  // FIXME lifetime
+fn read_list<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
+    // FIXME lifetime
     let mut items = Vec::new();
 
     // read_form so lange mit reader aufrufen, bis zum auftreten eines ')'
