@@ -79,6 +79,10 @@ fn read_form<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
             read_list(reader)
         }
 
+        Some(")") => {
+            Err(From::from("unbalanced parenthesis"))
+        }
+
         // sonst read_atom mit reader aufrufen
         Some(_) => {
             if reader.peek().unwrap().starts_with(";") {
