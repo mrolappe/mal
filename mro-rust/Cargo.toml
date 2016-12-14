@@ -15,6 +15,10 @@ path = "src/mal/lib.rs"
 # name = "step1_read_print"
 # path = "src/bin/step1_read_print.rs"
 
+[[bin]]
+name = "step2_eval"
+path = "src/bin/step2_eval.rs"
+
 [dependencies]
 regex = "0.1.80"
 lazy_static = "0.2.2"
