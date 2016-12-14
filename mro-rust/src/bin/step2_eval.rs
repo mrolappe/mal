@@ -112,7 +112,7 @@ fn eval_ast<'a>(ast: &'a MalData, env: &'a Environment) -> Result<MalData<'a>, S
 }
 
 fn print(input: &MalData) -> String {
-    printer::pr_str(input)
+    printer::pr_str(input, true)
 }
 
 fn env_insert_native_fun<'e>(env: &'e mut Environment,

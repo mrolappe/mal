@@ -138,6 +138,22 @@ fn read_atom<'r>(reader: &mut Reader) -> Option<MalData<'r>> {
     // wert eines entsprechenden datentyps (z.b. ganzzahl oder symbol)
     // zurueckliefern anhand des token-inhalts
     match atom {
+        Some(str) if str.starts_with("\"") && str.ends_with("\"") => {
+            Some(MalData::String(transform_string(str)))
+        }
+
+        Some("nil") => {
+            Some(MalData::Nil)
+        }
+
+        Some("#t") => {
+            Some(MalData::True) 
+        }
+
+        Some("#f") => {
+            Some(MalData::False) 
+        }
+
         Some(e) if e.is_empty() => Some(MalData::Nothing),
 
         Some(num) if NUM_RE.is_match(num) => {
@@ -153,4 +169,14 @@ fn read_atom<'r>(reader: &mut Reader) -> Option<MalData<'r>> {
 
         None => None
     }
+}
+
+fn transform_string(string: &str) -> String {
+    let newline_re = Regex::new(r"\\n").unwrap();
+    let quote_re = Regex::new(r#"\\""#).unwrap();
+
+    let mut res = newline_re.replace_all(string, "\n");
+    res = quote_re.replace_all(res.as_str(), "\"");
+
+    res
 }

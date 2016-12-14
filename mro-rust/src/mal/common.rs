@@ -10,6 +10,10 @@ pub trait MalFun : fmt::Debug  {
 #[derive(Clone)]
 pub enum MalData<'d> {
     Nothing,
+    Nil,
+    True,
+    False,
+    String(String),
     Symbol(String),
     Keyword(String),
     Number(i32),
@@ -41,7 +45,7 @@ impl NativeFunction {
 
 impl MalFun for NativeFunction {
     fn call<'d>(&self, args: &[MalData]) -> MalData<'d> {
-        println!("call natfun {}", self.name);
+        // println!("call natfun {}, args: {:?}", self.name, args);
 
         let result = match self.selector {
             NativeFunctionSelector::Add => number_arg(&args[0]) + number_arg(&args[1]),
