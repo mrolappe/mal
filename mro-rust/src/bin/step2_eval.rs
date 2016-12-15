@@ -13,6 +13,7 @@ use mal::reader;
 use mal::printer;
 
 use mal::common::MalData;
+use mal::common::MapKey;
 use mal::common::MalFun;
 use mal::common::NativeFunction;
 use mal::common::NativeFunctionSelector;
@@ -78,9 +79,46 @@ fn eval<'a>(ast: &'a MalData, env: &'a Environment) -> Result<MalData<'a>, Strin
 
 fn eval_ast<'a>(ast: &'a MalData, env: &'a Environment) -> Result<MalData<'a>, String> {
     // FIXME lifetime
-    // TODO Result als rueckgabetyp
 
     match *ast {
+        MalData::Vector(ref vec) => {
+            let mut eval_vec: Vec<MalData> = Vec::new();
+
+            for el in vec {
+                let res = eval(&el, env);
+
+                if res.is_err() {
+                    return res;
+                } else {
+                    eval_vec.push(res.unwrap());
+                }
+            }
+
+            debug!("eval_ast, eval_vec: {:?}", eval_vec);
+
+            Ok(MalData::Vector(eval_vec))
+        }
+
+        MalData::Map(ref map) => {
+            let mut eval_map: HashMap<MapKey, MalData> = HashMap::new();
+
+            let mut iter = map.into_iter();
+
+            loop {
+                match iter.next() {
+                    None => break,
+
+                    Some(( k, v )) => {
+                        eval_map.insert(k.clone(), eval(&v, env).unwrap());
+                    }
+                }
+            }
+
+            debug!("eval_ast, eval_map: {:?}", eval_map);
+
+            Ok(MalData::Map(eval_map))
+            
+        }
         MalData::Symbol(ref sym) => {
             env.get(sym)
                 .ok_or(format!("'{}' not found", sym))

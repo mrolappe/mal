@@ -1,13 +1,15 @@
+use std::collections::HashMap;
 use regex::Regex;
-use regex::Captures;
 
 use common::MalData;
-
+use common::MapKey;
 
 struct Reader<'r> {
     tokens: &'r Vec<&'r str>,
     index: usize,
 }
+
+type ReaderError = String;  // TODO eigener typ
 
 impl<'r> Reader<'r> {
     pub fn new(tokens: &'r Vec<&'r str>) -> Reader<'r> {
@@ -67,7 +69,6 @@ fn tokenizer(input: &str) -> Vec<&str> {
     tokens
 }
 
-
 fn read_form<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
     // FIXME lifetime
     // erstes token des readers untersuchen
@@ -76,10 +77,20 @@ fn read_form<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
         // linke runde klammer -> read_list mit reader aufrufen
         Some("(") => {
             reader.next();
-            read_list(reader)
+            read_list(reader, ")")
         }
 
-        Some(")") => {
+        Some("[") => {
+            reader.next();
+            read_list(reader, "]")
+        }
+
+        Some("{") => {
+            reader.next();
+            read_list(reader, "}")
+        }
+
+        Some(")") | Some("]") | Some("}") => {
             Err(From::from("unbalanced parenthesis"))
         }
 
@@ -103,34 +114,92 @@ fn read_form<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
 }
 
 
-fn read_list<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
+fn read_list<'r>(reader: &mut Reader, delim: &str) -> Result<MalData<'r>, ReaderError> {
     // FIXME lifetime
     let mut items = Vec::new();
 
+    trace!("read_list, delim: {}", delim);
+
     // read_form so lange mit reader aufrufen, bis zum auftreten eines ')'
     loop {
-        match reader.peek() {
+        match (reader.peek(), delim) {
             // die ergebnisse werden in einer liste gesammelt
-            Some(")") => {
+            (Some(")"), ")") => {
                 reader.next();
                 return Ok(MalData::List(items));
             }
 
-            Some(_) => {
+            (Some("]"), "]") => {
+                reader.next();
+                return Ok(MalData::Vector(items));
+            }
+
+            (Some("}"), "}") => {
+                reader.next();
+                return Ok(MalData::Map(hashmap_from_kv_list(items).unwrap()));
+            }
+
+            (Some(_), _) => {
                 let form = read_form(reader);
                 debug!("form: {:?}", &form);
                 items.push(form.unwrap());
             }
 
-            // tokens (vorzeitiges EOF ist fehler)
-            None => {
-                return Err("expected ')', got EOF".to_owned())
+            (None, delim) => {
+                return Err(format!("expected '{}', got EOF", delim))
             }
         }
     }
 }
 
+fn mapkey_for(atom: &MalData) -> Result<MapKey, ReaderError> {
+    match *atom {
+        MalData::True =>
+            Ok(MapKey::True),
 
+        MalData::False =>
+            Ok(MapKey::False),
+
+        MalData::String(ref string) =>
+            Ok(MapKey::String(string.clone())),
+
+        MalData::Symbol(ref string) =>
+            Ok(MapKey::Symbol(string.clone())),
+
+        MalData::Keyword(ref string) =>
+            Ok(MapKey::Keyword(string.clone())),
+
+        MalData::Number(num) =>
+            Ok(MapKey::Number(num)),
+
+        _ =>
+            Err(format!("mapkey_for, unhandled: {:?}", atom))
+    }
+}
+
+
+fn hashmap_from_kv_list(kvs: Vec<MalData>) -> Result<HashMap<MapKey, MalData>, ReaderError> {
+    let mut map: HashMap<MapKey, MalData> = HashMap::new();
+    let mut iter = kvs.iter();
+
+    loop {
+        let (k, v) = ( iter.next(), iter.next() );
+
+        match (k, v) {
+            (None, None) => break,
+
+            (Some(k), None) => return Err(format!("value missing for map entry (key: {:?})", k)),
+
+            (Some(k), Some(v)) => { map.insert(try!(mapkey_for(k)), v.clone()); }
+
+            _ => break,
+        }
+
+        debug!("TODO hashmap_from_kv_list, kvs: {:?}, k: {:?}, v: {:?}", kvs, k, v);
+    }
+
+    Ok(map)
+}
 fn read_atom<'r>(reader: &mut Reader) -> Option<MalData<'r>> {
     // FIXME lifetime
     let atom = reader.next();
@@ -150,11 +219,11 @@ fn read_atom<'r>(reader: &mut Reader) -> Option<MalData<'r>> {
             Some(MalData::Nil)
         }
 
-        Some("#t") => {
+        Some("true") => {
             Some(MalData::True) 
         }
 
-        Some("#f") => {
+        Some("false") => {
             Some(MalData::False) 
         }
 
