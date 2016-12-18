@@ -69,7 +69,7 @@ fn tokenizer(input: &str) -> Vec<&str> {
     tokens
 }
 
-fn read_form<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
+fn read_form<'r>(reader: &mut Reader) -> Result<MalData, String> {
     // FIXME lifetime
     // erstes token des readers untersuchen
     // unterscheidung nach erstem zeichen des tokens
@@ -114,7 +114,7 @@ fn read_form<'r>(reader: &mut Reader) -> Result<MalData<'r>, String> {
 }
 
 
-fn read_list<'r>(reader: &mut Reader, delim: &str) -> Result<MalData<'r>, ReaderError> {
+fn read_list<'r>(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderError> {
     // FIXME lifetime
     let mut items = Vec::new();
 
@@ -200,7 +200,7 @@ fn hashmap_from_kv_list(kvs: Vec<MalData>) -> Result<HashMap<MapKey, MalData>, R
 
     Ok(map)
 }
-fn read_atom<'r>(reader: &mut Reader) -> Option<MalData<'r>> {
+fn read_atom<'r>(reader: &mut Reader) -> Option<MalData> {
     // FIXME lifetime
     let atom = reader.next();
 

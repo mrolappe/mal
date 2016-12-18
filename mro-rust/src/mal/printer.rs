@@ -9,6 +9,9 @@ pub trait PrStr {
 
 impl PrStr for MapKey {
     fn pr_str(&self, print_readably: bool) -> String {
+        if print_readably {
+        }
+
         match *self {
             // MalData::Nil => "nil".to_owned(),
             MapKey::True => "true".to_owned(),
@@ -20,7 +23,8 @@ impl PrStr for MapKey {
         }
     }
 }
-impl<'d> PrStr for MalData<'d> {
+
+impl PrStr for MalData {
     fn pr_str(&self, print_readably: bool) -> String {
         match *self {
             MalData::Nothing => "".to_owned(),
@@ -68,6 +72,7 @@ impl<'d> PrStr for MalData<'d> {
             }
 
             MalData::Function(_) => "fun".to_string(),
+            // MalData::FunctionBox(_) => "funbox".to_string(),
         }
     }
 }

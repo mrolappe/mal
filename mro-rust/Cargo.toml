@@ -15,9 +15,13 @@ path = "src/mal/lib.rs"
 # name = "step1_read_print"
 # path = "src/bin/step1_read_print.rs"
 
+# [[bin]]
+# name = "step2_eval"
+# path = "src/bin/step2_eval.rs"
+
 [[bin]]
-name = "step2_eval"
-path = "src/bin/step2_eval.rs"
+name = "step3_env"
+path = "src/bin/step3_env.rs"
 
 [dependencies]
 regex = "0.1.80"

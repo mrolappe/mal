@@ -17,7 +17,7 @@ pub enum MapKey {
 
 // #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[derive(Debug, Clone)]
-pub enum MalData<'d> {
+pub enum MalData {
     Nothing,
     Nil,
     True,
@@ -26,13 +26,13 @@ pub enum MalData<'d> {
     Symbol(String),
     Keyword(String),
     Number(i32),
-    List(Vec<MalData<'d>>),
-    Vector(Vec<MalData<'d>>),
-    Map(HashMap<MapKey, MalData<'d>>),
-    Function(&'d MalFun),
+    List(Vec<MalData>),
+    Vector(Vec<MalData>),
+    Map(HashMap<MapKey, MalData>),
+    Function(NativeFunction),
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum NativeFunctionSelector {
     Add,
     Sub,
@@ -41,7 +41,7 @@ pub enum NativeFunctionSelector {
 }
 
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct NativeFunction {
     name: String,
     selector: NativeFunctionSelector,
@@ -57,7 +57,7 @@ impl NativeFunction {
 }
 
 impl MalFun for NativeFunction {
-    fn call<'d>(&self, args: &[MalData]) -> MalData<'d> {
+    fn call(&self, args: &[MalData]) -> MalData {
         // println!("call natfun {}, args: {:?}", self.name, args);
 
         let result = match self.selector {
@@ -77,6 +77,8 @@ impl MalFun for NativeFunction {
 }
 
 fn number_arg(arg: &MalData) -> i32 {
+    debug!("number_arg, arg: {:?}", arg);
+
     let number = match *arg {
         MalData::Number(num) => num,
 

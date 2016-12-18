@@ -16,14 +16,14 @@ fn eval(input: MalData) -> MalData {
    input 
 }
 
-fn print(input: &MalData) -> String {
-    printer::pr_str(input)
+fn print(input: &MalData, print_readably: bool) -> String {
+    printer::pr_str(input, print_readably)
 }
 
 fn rep(input: &str) -> String {
     if let Some(read_out) = read(input) {
         let eval_out = eval(read_out);
-        let print_out = print(&eval_out);
+        let print_out = print(&eval_out, true);
         print_out
     } else {
         "err".to_string()    // TODO erweiterte fehlerbehandlung
