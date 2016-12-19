@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::slice::Iter;
 
 use common::MalData;
 
@@ -12,9 +13,31 @@ pub struct Env<'o, K=Symbol, V=MalData> where K: Eq+Hash {
     data: HashMap<K, V>
 }
 
+fn sym_name(data: &MalData) -> Option<String> {
+    if let &MalData::Symbol(ref sym) = data {
+        Some(sym.clone())
+    } else {
+        None
+    }
+}
 impl<'o> Env<'o> {
-    pub fn new(outer: Option<&'o Env<'o>>) -> Env {
-        Env { outer: outer, data: HashMap::new() }
+    pub fn new(outer: Option<&'o Env<'o>>, mut binds: Iter<MalData>, mut exprs: Iter<MalData>) -> Result<Env<'o>, String> {
+        let mut env = Env { outer: outer, data: HashMap::new() };
+
+        loop {
+            match ( binds.next(), exprs.next() ) {
+                ( Some(bind), Some(expr) ) =>
+                    env.set(sym_name(&bind).as_ref().unwrap(), expr),
+
+                ( None, None) =>
+                    break,
+
+                ( bind, expr) =>
+                    return Err(format!("illegal binding: {:?}, {:?}", bind, expr))
+            }
+        };
+
+        Ok(env)
     }
 
     pub fn set(&mut self, key: &EnvKey, value: &MalData) -> () {

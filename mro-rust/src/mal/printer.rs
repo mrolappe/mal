@@ -30,7 +30,7 @@ impl PrStr for MalData {
             MalData::Nothing => "".to_owned(),
             MalData::Nil => "nil".to_owned(),
             MalData::True => "true".to_owned(),
-            MalData::False => "true".to_owned(),
+            MalData::False => "false".to_owned(),
             MalData::String(ref string) => make_readable_string(string),
             MalData::Symbol(ref sym) => sym.clone(),  // TODO symbolname
             MalData::Keyword(ref kw) => kw.chars().skip(1).collect(),
@@ -71,8 +71,7 @@ impl PrStr for MalData {
                 out
             }
 
-            MalData::Function(_) => "fun".to_string(),
-            // MalData::FunctionBox(_) => "funbox".to_string(),
+            MalData::Function(_) => "#".to_string(),
         }
     }
 }
