@@ -1,33 +1,33 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::slice::Iter;
-
+use std::rc::Rc;
+use std::cell::RefCell;
 use common::MalData;
 
-type EnvKey = String;
-type Symbol = String;
+pub type Symbol = String;
+type EnvKey = Symbol;
+pub type EnvType = Rc<RefCell<Env>>;
 
-#[derive(Debug)]
-pub struct Env<'o, K=Symbol, V=MalData> where K: Eq+Hash {
-    outer: Option<&'o Env<'o>>,
+
+#[derive(Debug, Clone)]
+pub struct Env<K=Symbol, V=Rc<MalData>> where K: Eq+Hash {
+    outer: Option<EnvType>,
     data: HashMap<K, V>
 }
 
-fn sym_name(data: &MalData) -> Option<String> {
-    if let &MalData::Symbol(ref sym) = data {
-        Some(sym.clone())
-    } else {
-        None
-    }
-}
-impl<'o> Env<'o> {
-    pub fn new(outer: Option<&'o Env<'o>>, mut binds: Iter<MalData>, mut exprs: Iter<MalData>) -> Result<Env<'o>, String> {
+impl Env {
+    pub fn new(outer: Option<EnvType>, binds: &[Symbol], exprs: &[MalData]) -> Result<Env, String> {
         let mut env = Env { outer: outer, data: HashMap::new() };
 
+        let mut bi = binds.iter();
+        let mut ei = exprs.iter();
+
         loop {
-            match ( binds.next(), exprs.next() ) {
-                ( Some(bind), Some(expr) ) =>
-                    env.set(sym_name(&bind).as_ref().unwrap(), expr),
+            match ( bi.next(), ei.next() ) {
+                ( Some(bind), Some(expr) ) => {
+                    debug!("Env::new, bind {:?} -> {:?}", bind, expr);
+                    env.set(&bind.clone(), expr);
+                }
 
                 ( None, None) =>
                     break,
@@ -42,28 +42,32 @@ impl<'o> Env<'o> {
 
     pub fn set(&mut self, key: &EnvKey, value: &MalData) -> () {
         debug!("env.set, data: {:?}, k: {:?}, v: {:?}", self.data, key, value);
-        self.data.insert(key.clone(), value.clone());
+        self.data.insert(key.clone(), Rc::from(value.clone()));
     }
 
-    pub fn find(&self, key: &EnvKey) -> Option<&Env> {
-        if self.data.contains_key(key) {
-            debug!("{:?} found in env {:?}", key, self);
-            Some(self)
+    pub fn find(env: &EnvType, key: &EnvKey) -> Option<EnvType> {
+        if env.borrow().data.contains_key(key) {
+            debug!("{:?} found in env {:?}", key, env);
+            Some(env.clone())
         } else {
-            let value = match self.outer {
-                Some(outer) => outer.find(key),
-                None => None,
+            let outer = &env.borrow().outer;
+
+            let value = match outer {
+                & Some(ref outer) => {
+                    Env::find(&outer, key)
+                }
+                & None => None,
             };
 
-            debug!("{:?} found in outer ({:?}): {:?}", key, self.outer, value);
+            debug!("{:?} found in outer ({:?}): {:?}", key, outer, value);
             value
         }
     }
 
-    pub fn get(&self, key: &EnvKey) -> Option<&MalData> {
-        match self.find(key) {
+    pub fn get<'e>(env: &'e EnvType, key: &EnvKey) -> Option<Rc<MalData>> {
+        match Env::find(env, key) {
             Some(env) =>
-                env.data.get(key),
+                Some(env.borrow().data.get(key).unwrap().clone()),
             None =>
                 None
         }

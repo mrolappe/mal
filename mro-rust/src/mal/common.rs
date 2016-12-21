@@ -1,8 +1,11 @@
 use std::fmt;
 use std::collections::HashMap;
+use std::rc::Rc;
+
+use env::{Symbol, EnvType};
 
 pub trait MalFun: fmt::Debug {
-    fn call(&self, args: &[MalData]) -> MalData;
+    fn apply(&self, args: &[MalData]) -> MalData;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -15,6 +18,26 @@ pub enum MapKey {
     Number(i32),
 }
 
+#[derive(Debug, Clone)]
+pub struct FnClosure {
+    pub outer_env: EnvType,
+    pub binds: Vec<Symbol>,
+    pub body: Box<MalData>
+}
+
+impl FnClosure {
+    pub fn new(outer_env: EnvType, binds: &Vec<Symbol>, body: &MalData) -> FnClosure {
+        FnClosure { outer_env: outer_env, binds: binds.clone(), body: Box::new(body.clone()) }
+    }
+}
+
+impl MalFun for FnClosure {
+    fn apply(&self, args: &[MalData]) -> MalData {
+        warn!("FIXME FnClosure.apply");
+
+        MalData::Nil
+    }
+}
 // #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 #[derive(Debug, Clone)]
 pub enum MalData {
@@ -26,10 +49,11 @@ pub enum MalData {
     Symbol(String),
     Keyword(String),
     Number(i32),
-    List(Vec<MalData>),
-    Vector(Vec<MalData>),
+    List(Rc<Vec<MalData>>),
+    Vector(Rc<Vec<MalData>>),
     Map(HashMap<MapKey, MalData>),
     Function(NativeFunction),
+    FnClosure(FnClosure)
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -57,7 +81,7 @@ impl NativeFunction {
 }
 
 impl MalFun for NativeFunction {
-    fn call(&self, args: &[MalData]) -> MalData {
+    fn apply(&self, args: &[MalData]) -> MalData {
         // println!("call natfun {}, args: {:?}", self.name, args);
 
         let result = match self.selector {

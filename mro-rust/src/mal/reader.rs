@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use regex::Regex;
+use std::rc::Rc;
 
 use common::MalData;
 use common::MapKey;
@@ -37,7 +38,7 @@ impl<'r> Reader<'r> {
     }
 }
 
-pub fn read_str(input: &str) -> Result<MalData, String> {
+pub fn read_str<'a>(input: &'a str) -> Result<MalData, String> {
     // tokenizer aufrufen
     let tokens = tokenizer(input);
 
@@ -69,8 +70,7 @@ fn tokenizer(input: &str) -> Vec<&str> {
     tokens
 }
 
-fn read_form<'r>(reader: &mut Reader) -> Result<MalData, String> {
-    // FIXME lifetime
+fn read_form(reader: &mut Reader) -> Result<MalData, String> {
     // erstes token des readers untersuchen
     // unterscheidung nach erstem zeichen des tokens
     let result = match reader.peek() {
@@ -114,8 +114,7 @@ fn read_form<'r>(reader: &mut Reader) -> Result<MalData, String> {
 }
 
 
-fn read_list<'r>(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderError> {
-    // FIXME lifetime
+fn read_list(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderError> {
     let mut items = Vec::new();
 
     trace!("read_list, delim: {}", delim);
@@ -126,12 +125,12 @@ fn read_list<'r>(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderErro
             // die ergebnisse werden in einer liste gesammelt
             (Some(")"), ")") => {
                 reader.next();
-                return Ok(MalData::List(items));
+                return Ok(MalData::List(Rc::new(items)));
             }
 
             (Some("]"), "]") => {
                 reader.next();
-                return Ok(MalData::Vector(items));
+                return Ok(MalData::Vector(Rc::new(items)));
             }
 
             (Some("}"), "}") => {
@@ -200,8 +199,7 @@ fn hashmap_from_kv_list(kvs: Vec<MalData>) -> Result<HashMap<MapKey, MalData>, R
 
     Ok(map)
 }
-fn read_atom<'r>(reader: &mut Reader) -> Option<MalData> {
-    // FIXME lifetime
+fn read_atom(reader: &mut Reader) -> Option<MalData> {
     let atom = reader.next();
 
     lazy_static!{

@@ -24,7 +24,7 @@ impl PrStr for MapKey {
     }
 }
 
-impl PrStr for MalData {
+impl<'d> PrStr for MalData {
     fn pr_str(&self, print_readably: bool) -> String {
         match *self {
             MalData::Nothing => "".to_owned(),
@@ -71,7 +71,7 @@ impl PrStr for MalData {
                 out
             }
 
-            MalData::Function(_) => "#".to_string(),
+            MalData::Function(_) | MalData::FnClosure(_) => "#".to_string(),
         }
     }
 }
