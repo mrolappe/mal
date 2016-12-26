@@ -5,8 +5,10 @@ use std::rc::Rc;
 use env::{Symbol, EnvType};
 
 pub trait MalFun: fmt::Debug {
-    fn apply(&self, args: &[MalData]) -> MalData;
+    fn apply(&self, args: &[MalData]) -> Result<MalData, String>;
 }
+
+pub type CallableFun = Fn(&[MalData]) -> Result<MalData, String>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MapKey {
@@ -31,15 +33,15 @@ impl FnClosure {
     }
 }
 
-impl MalFun for FnClosure {
-    fn apply(&self, args: &[MalData]) -> MalData {
-        warn!("FIXME FnClosure.apply");
+// impl MalFun for FnClosure {
+//     fn apply(&self, args: &[MalData]) -> Result<MalData, String> {
+//         warn!("FIXME FnClosure.apply");
 
-        MalData::Nil
-    }
-}
+//         Ok(MalData::Nil)
+//     }
+// }
 // #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MalData {
     Nothing,
     Nil,
@@ -56,60 +58,77 @@ pub enum MalData {
     FnClosure(FnClosure)
 }
 
+impl PartialEq for NativeFunction {
+    fn eq(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl PartialEq for FnClosure {
+    fn eq(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum NativeFunctionSelector {
     Add,
     Sub,
     Mul,
     Div,
+    Callable,
 }
 
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct NativeFunction {
     name: String,
     selector: NativeFunctionSelector,
+    callable: Rc<CallableFun>
+}
+
+impl fmt::Debug for NativeFunction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Function {{ name: {:?}, selector: {:?} }}", self.name, self.selector)
+    }
+    
 }
 
 impl NativeFunction {
-    pub fn new(name: &str, selector: NativeFunctionSelector) -> NativeFunction {
+    pub fn new(name: &str, selector: NativeFunctionSelector, callable: Rc<CallableFun>) -> NativeFunction {
         NativeFunction {
             name: name.to_owned(),
             selector: selector,
+            callable: callable
         }
     }
 }
 
 impl MalFun for NativeFunction {
-    fn apply(&self, args: &[MalData]) -> MalData {
+    fn apply(&self, args: &[MalData]) -> Result<MalData, String> {
         // println!("call natfun {}, args: {:?}", self.name, args);
 
-        let result = match self.selector {
-            NativeFunctionSelector::Add => number_arg(&args[0]) + number_arg(&args[1]),
+        if let NativeFunctionSelector::Callable = self.selector {
+            return (self.callable)(args)
+        }
+        // let result = match self.selector {
+        //     NativeFunctionSelector::Callable => {
+        //         debug!("MalFun::apply, Callable");
+        //         -1
+        //     }
+        //     NativeFunctionSelector::Add => number_arg(&args[0]) + number_arg(&args[1]),
 
-            NativeFunctionSelector::Sub => number_arg(&args[0]) - number_arg(&args[1]),
+        //     NativeFunctionSelector::Sub => number_arg(&args[0]) - number_arg(&args[1]),
 
-            NativeFunctionSelector::Mul => number_arg(&args[0]) * number_arg(&args[1]),
+        //     NativeFunctionSelector::Mul => number_arg(&args[0]) * number_arg(&args[1]),
 
-            NativeFunctionSelector::Div => {
-                number_arg(&args[0]).checked_div(number_arg(&args[1])).unwrap()
-            }
-        };
+        //     NativeFunctionSelector::Div => {
+        //         number_arg(&args[0]).checked_div(number_arg(&args[1])).unwrap()
+        //     }
+        // };
 
-        MalData::Number(result)
+        // Ok(MalData::Number(result))
+        Ok(MalData::Number(666))
     }
 }
 
-fn number_arg(arg: &MalData) -> i32 {
-    debug!("number_arg, arg: {:?}", arg);
-
-    let number = match *arg {
-        MalData::Number(num) => num,
-
-        _ => {
-            panic!("arg ist keine zahl");
-        }// FIXME fehlerbehandlung
-    };
-
-    number
-}

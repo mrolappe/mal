@@ -9,8 +9,6 @@ use std::io::{self, Write};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::fmt;
-use std::iter;
-use std::slice::Iter;
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -23,7 +21,9 @@ use mal::common::MapKey;
 use mal::common::MalFun;
 use mal::common::NativeFunction;
 use mal::common::NativeFunctionSelector;
-use mal::common::FnClosure;
+use mal::common::{FnClosure, CallableFun};
+
+use mal::core::init_ns_map;
 
 #[derive(Debug, Clone)]
 enum EvalError {
@@ -50,7 +50,7 @@ fn read<'a>(input: &'a str) -> Result<MalData, String> {
     reader::read_str(input)
 }
 
-fn call_function(f: & NativeFunction, args: & [MalData]) -> MalData {
+fn call_function(f: & NativeFunction, args: & [MalData]) -> Result<MalData, EvalError> {
     debug!("call_function, f: {:?}, args: {:?}", f, args);
 
     let result = f.apply(args);
@@ -60,20 +60,20 @@ fn call_function(f: & NativeFunction, args: & [MalData]) -> MalData {
     }
 
     trace!("call_function, result: {:?}", result);
-    result
+    result.map_err( | e | EvalError::from(e))
 }
 
-fn call_fn_closure(f: & FnClosure, args: & [MalData]) -> MalData {
-    debug!("call_fn_closure, f: {:?}, args: {:?}", f, args);
-    let result = f.apply(args);
+// fn call_fn_closure(f: & FnClosure, args: & [MalData]) -> MalData {
+//     debug!("call_fn_closure, f: {:?}, args: {:?}", f, args);
+//     let result = f.apply(args);
 
-    if log_enabled!(Trace) {
-        for arg in args { trace!("arg: {:?}", arg) };
-    }
+//     if log_enabled!(Trace) {
+//         for arg in args { trace!("arg: {:?}", arg) };
+//     }
 
-    trace!("call_fn_closure, result: {:?}", result);
-    result
-}
+//     trace!("call_fn_closure, result: {:?}", result);
+//     result.unwrap()
+// }
 
 fn eval_do(env: EnvType, forms: & [MalData]) -> Result<MalData, EvalError> {
     let mut result = Ok(MalData::Nil);
@@ -83,7 +83,7 @@ fn eval_do(env: EnvType, forms: & [MalData]) -> Result<MalData, EvalError> {
 
         {
             let e = env.clone();
-            result = eval_ast(e, &form);
+            result = eval(e, &form);
             debug!("eval_do, result: {:?}", result);
         }
     }
@@ -119,25 +119,26 @@ fn apply_fn_closure(fn_closure: &FnClosure, parameters: &[MalData]) -> Result<Ma
 }
 
 fn eval_fn(env: EnvType, binds: & MalData, body: & MalData) -> Result<MalData, EvalError> {
-    debug!("eval_fn, env: {:?}, binds: {:?}, body: {:?}", env, binds, body);
+    debug!("eval_fn, binds: {:?}, body: {:?}", binds, body);
 
-    let binds_vec = if let &MalData::Vector(ref vec) = binds {
-        let mut binds_vec = Vec::with_capacity(vec.len());
+    match binds {
+        &MalData::Vector(ref b) | &MalData::List(ref b) => {
+            let mut binds_vec = Vec::with_capacity(b.len());
 
-        for bind in vec.iter() {
-            if let &MalData::Symbol(ref sym) = bind {
-                binds_vec.push(sym.clone());
-            } else {
-                return Err(EvalError::General(format!("Expected symbol for bind, got: {:?}", bind)));
+            for bind in b.iter() {
+                if let &MalData::Symbol(ref sym) = bind {
+                    binds_vec.push(sym.clone());
+                } else {
+                    return Err(EvalError::General(format!("Expected symbol for bind, got: {:?}", bind)));
+                }
             }
+
+            Ok(MalData::FnClosure(FnClosure::new(env, &binds_vec, body)))
         }
 
-        binds_vec
-    } else {
-        return Err(EvalError::General("expected vector for binds".to_owned()));
-    };
-
-    Ok(MalData::FnClosure(FnClosure::new(env, &binds_vec, body)))
+        _ =>
+            Err(EvalError::General("expected vector for binds".to_owned()))
+    }
 }
 
 fn eval_let(env: EnvType, let_bindings: &[MalData], let_body: & MalData) -> Result<MalData, EvalError> {
@@ -203,14 +204,14 @@ fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
             if let Some(& MalData::Symbol(ref sym)) = list.first() {
                 match sym.as_str() {
                     "def!" => {
-                        debug!("eval, > def!, env: {:?}", env.clone());
+                        debug!("eval, > def!");
                         let result = eval_def(env.clone(), list.get(1), list.get(2));
-                        debug!("eval, < def!, env: {:?}", env.clone());
+                        debug!("eval, < def!");
                         return result;
                     }
 
                     "let*" => {
-                        debug!("eval, > let*, env: {:?}", env);
+                        debug!("eval, > let*");
                         let let_body = list.get(2);
 
                         let let_bindings = match list.get(1) {
@@ -221,22 +222,22 @@ fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
                         };
 
                         let result = eval_let(env.clone(), let_bindings, let_body.unwrap());
-                        debug!("eval, < let*, env: {:?}, result: {:?}", env.clone(), result);
+                        debug!("eval, < let*, result: {:?}", result);
                         return result;
                     }
 
                     "do" => {
-                        debug!("eval, > do, env: {:?}", env);
+                        debug!("eval, > do");
                         return eval_do(env, &list[1..]);
                     }
 
                     "if" => {
-                        debug!("eval, > if, env: {:?}", env);
+                        debug!("eval, > if");
                         return eval_if(env, &list[1], &list[2], list.get(3));
                     }
 
                     "fn*" => {
-                        debug!("eval, > fn*, env: {:?}", env);
+                        debug!("eval, > fn*");
                         return eval_fn(env, &list[1], &list[2]);
                     }
 
@@ -252,8 +253,7 @@ fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
                     match l.first() {
                         Some(&MalData::Function(ref f)) => {
                             debug!("(fun ...), f: {:?}", f);
-                            let res = call_function(f, &l[1..]);
-                            return Ok(res)
+                            return call_function(f, &l[1..]);
                         }
 
                         Some(&MalData::FnClosure(ref fnc)) => {
@@ -365,10 +365,8 @@ fn print(input: &MalData) -> String {
     printer::pr_str(input, true)
 }
 
-fn env_insert_native_fun<'e>(env: &'e mut Env,
-                             name: &str,
-                             selector: NativeFunctionSelector) {
-        env.set(&name.to_owned(), &MalData::Function(NativeFunction::new(name, selector)));
+fn env_insert_fun(env: & mut Env, name: &str, fun: Rc<CallableFun>) {
+        env.set(&name.to_owned(), &MalData::Function(NativeFunction::new(name, NativeFunctionSelector::Callable, fun)));
 }
 
 
@@ -380,9 +378,9 @@ fn rep<'a, 'i>(repl_env: EnvType, input: &'i str) -> Result<String, EvalError> {
         return Err(EvalError::from(read_out.unwrap_err()));
     }
 
-    debug!("rep, > eval; env: {:?}", repl_env.clone());
+    debug!("rep, > eval");
     let eval_out = eval(repl_env.clone(), &read_out?);
-    debug!("rep, < eval; env: {:?}", repl_env.clone());
+    debug!("rep, < eval");
 
     if eval_out.is_ok() {
         Ok(print(&eval_out.unwrap()))
@@ -396,17 +394,20 @@ fn main() {
 
     let mut repl_env = Env::new(None, &[], &[]).unwrap();
 
-    env_insert_native_fun(&mut repl_env, "+", NativeFunctionSelector::Add);
-    env_insert_native_fun(&mut repl_env, "-", NativeFunctionSelector::Sub);
-    env_insert_native_fun(&mut repl_env, "*", NativeFunctionSelector::Mul);
-    env_insert_native_fun(&mut repl_env, "/", NativeFunctionSelector::Div);
+    let ns_map = init_ns_map();
+
+    for (sym, fun) in ns_map {
+        env_insert_fun(&mut repl_env, sym, fun);
+    }
 
     let env_rc = Rc::from(RefCell::from(repl_env));
+
+    rep(env_rc.clone(), "(def! not (fn* [a] (if a false true)))");
 
     loop {
         let mut input = &mut String::new();
 
-        debug!("main loop, env: {:?}", env_rc.clone());
+        debug!("main loop");
 
         print!("user> ");
         io::stdout().flush();
