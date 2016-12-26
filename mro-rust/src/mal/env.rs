@@ -24,6 +24,34 @@ impl Env {
 
         loop {
             match ( bi.next(), ei.next() ) {
+                ( Some(and), None ) if and == "&" => {
+                    if let Some(rest_bind) = bi.next() {
+                        env.set(rest_bind, &MalData::Nil);
+
+                        break;
+                    } else {
+                        return Err("symbol expected for rest bind".to_owned())
+                    }
+                }
+
+                ( Some(and), Some(rest_first) ) if and == "&" => {
+                    if let Some(rest_bind) = bi.next() {
+                        let mut rest_exprs: Vec<MalData> = Vec::new();
+
+                        rest_exprs.push(rest_first.clone());
+
+                        while let Some(expr) = ei.next() {
+                            rest_exprs.push(expr.clone());
+                        }
+
+                        env.set(rest_bind, &MalData::List(Rc::from(rest_exprs)));
+
+                        break;
+                    } else {
+                        return Err("symbol expected for rest bind".to_owned())
+                    }
+                }
+
                 ( Some(bind), Some(expr) ) => {
                     debug!("Env::new, bind {:?} -> {:?}", bind, expr);
                     env.set(&bind.clone(), expr);
