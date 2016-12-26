@@ -210,7 +210,8 @@ fn read_atom(reader: &mut Reader) -> Option<MalData> {
     // zurueckliefern anhand des token-inhalts
     match atom {
         Some(str) if str.starts_with("\"") && str.ends_with("\"") => {
-            Some(MalData::String(transform_string(str)))
+            let str_content = &str[1..str.len() - 1];    // ohne die anfuehrungszeichen
+            Some(MalData::String(transform_string(str_content)))
         }
 
         Some("nil") => {
@@ -243,11 +244,13 @@ fn read_atom(reader: &mut Reader) -> Option<MalData> {
 }
 
 fn transform_string(string: &str) -> String {
-    let newline_re = Regex::new(r"\\n").unwrap();
-    let quote_re = Regex::new(r#"\\""#).unwrap();
+    let newline_re = Regex::new(r#"\\n"#).unwrap();
+    let dquote_re = Regex::new(r#"\\""#).unwrap();
+    let backslash_re = Regex::new(r#"\\\\"#).unwrap();
 
     let mut res = newline_re.replace_all(string, "\n");
-    res = quote_re.replace_all(res.as_str(), "\"");
+    res = dquote_re.replace_all(&res, r#"""#);
+    res = backslash_re.replace_all(&res, r#"\"#);
 
     res
 }

@@ -1,4 +1,5 @@
 use itertools::join;
+use regex::Regex;
 
 use common::MalData;
 use common::MapKey;
@@ -31,7 +32,7 @@ impl<'d> PrStr for MalData {
             MalData::Nil => "nil".to_owned(),
             MalData::True => "true".to_owned(),
             MalData::False => "false".to_owned(),
-            MalData::String(ref string) => make_readable_string(string),
+            MalData::String(ref string) => if print_readably { make_readable_string(string) } else { string.clone() },
             MalData::Symbol(ref sym) => sym.clone(),  // TODO symbolname
             MalData::Keyword(ref kw) => kw.chars().skip(1).collect(),
             MalData::Number(ref num) => num.to_string(),  // TODO zahl
@@ -71,15 +72,28 @@ impl<'d> PrStr for MalData {
                 out
             }
 
-            MalData::Function(_) | MalData::FnClosure(_) => "#".to_string(),
+            MalData::Function(_) | MalData::FnClosure(_) => "#<function>".to_string(),
         }
     }
 }
+
 pub fn pr_str(data: &PrStr, print_readably: bool) -> String {
     data.pr_str(print_readably)
 }
 
 fn make_readable_string(string: &String) -> String {
-    // TODO
-    format!("{}", string)
+    let newline_re = Regex::new(r"\n").unwrap();
+    let dquote_re = Regex::new(r#"""#).unwrap();
+    let backslash_re = Regex::new(r#"\\"#).unwrap();
+
+    let mut escaped = backslash_re.replace_all(string, r#"\\"#);
+    escaped = newline_re.replace_all(&escaped, r#"\n"#);
+    escaped = dquote_re.replace_all(&escaped, r#"\""#);
+
+    let mut res = String::from("\"");
+    res.push_str(&escaped);
+    res.push_str("\"");
+
+    // println!("mrs: {} -> {}", string, res);
+    res.to_owned()
 }
