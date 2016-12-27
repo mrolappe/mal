@@ -1,9 +1,6 @@
 extern crate mal;
 
 #[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
 extern crate log;
 extern crate env_logger;
 use log::LogLevel::Trace;
@@ -14,10 +11,11 @@ use std::ops::Deref;
 use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::borrow::Borrow;
 
 use mal::reader;
 use mal::printer;
-use mal::env::{EnvType, Env};
+use mal::env::{EnvType, Env, Symbol};
 
 use mal::common::MalData;
 use mal::common::MapKey;
@@ -72,16 +70,14 @@ fn call_function(f: & NativeFunction, args: & [MalData]) -> Result<MalData, Eval
 // fn eval_if<'a: 'e, 'e, 'r>(env: EnvType, cond_form: & MalData, then_form: & MalData, else_form: Option<&'a MalData>) -> Result<MalData, EvalError> {
 // }
 
+fn apply_fn_closure(fn_closure: &FnClosure, parameters: &[MalData]) -> Result<MalData, EvalError> {
+    debug!("apply_fn_closure, cl: {:?}, parameters: {:?}", fn_closure, parameters);
 
-// mro nicht benutzt
-// fn apply_fn_closure(fn_closure: &FnClosure, parameters: &[MalData]) -> Result<MalData, EvalError> {
-//     debug!("apply_fn_closure, cl: {:?}, parameters: {:?}", fn_closure, parameters);
+    let outer_env = fn_closure.outer_env.clone();
+    let fn_env = Env::new(Some(outer_env), fn_closure.binds.as_slice(), parameters)?;
 
-//     let outer_env = fn_closure.outer_env.clone();
-//     let fn_env = Env::new(Some(outer_env), fn_closure.binds.as_slice(), parameters)?;
-
-//     eval(Rc::new(RefCell::new(fn_env)), fn_closure.body.as_ref())
-// }
+    eval(Rc::new(RefCell::new(fn_env)), fn_closure.body.as_ref())
+}
 
 fn eval_fn(env: EnvType, binds: & MalData, body: & MalData) -> Result<MalData, EvalError> {
     debug!("eval_fn, binds: {:?}, body: {:?}", binds, body);
@@ -109,7 +105,7 @@ fn eval_fn(env: EnvType, binds: & MalData, body: & MalData) -> Result<MalData, E
 // fn eval_let(env: EnvType, let_bindings: &[MalData], let_body: & MalData) -> Result<MalData, EvalError> {
 // }
 
-fn eval_def(env: EnvType, name: Option<&MalData>, value: Option<&MalData>) -> Result<MalData, EvalError> {
+fn eval_def(mut env: EnvType, name: Option<&MalData>, value: Option<&MalData>) -> Result<MalData, EvalError> {
     match ( name, value ) {
         ( None, None ) | ( None, Some(_) ) | ( Some(_), None ) =>
             Err(EvalError::General("def! requires a name and a value".to_owned())),
@@ -219,6 +215,7 @@ fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
 
                         tco_ast = list.last().unwrap().clone();  // TODO fehlerbehandlung
                         continue;
+                        // return eval_do(env, &list[1..]);
                     }
 
                     "if" => {
@@ -397,8 +394,8 @@ fn print(input: &MalData) -> String {
     printer::pr_str(input, true)
 }
 
-fn env_insert_fun(env: EnvType, name: &str, fun: Rc<CallableFun>) {
-        env.borrow_mut().set(&name.to_owned(), &MalData::Function(NativeFunction::new(name, NativeFunctionSelector::Callable, fun)));
+fn env_insert_fun(env: & mut Env, name: &str, fun: Rc<CallableFun>) {
+        env.set(&name.to_owned(), &MalData::Function(NativeFunction::new(name, NativeFunctionSelector::Callable, fun)));
 }
 
 
@@ -421,32 +418,18 @@ fn rep<'a, 'i>(repl_env: EnvType, input: &'i str) -> Result<String, EvalError> {
     }
 }
 
-// ordnet in der umgebung dem symbol 'eval' eine closure zu, die eval mit der uebergebenen umgebung (REPL-umgebung) und dem ersten
-// parameter der closure aufruft.
-//
-// diese verrenkung mittels separater funktion schien noetig fuer ein erfolgreiches kompilieren. beim versuch, direkt in main
-// eine entsprechende closure zu installieren verweigerte sich rust mit dem hinweis, dass die closure evtl. laenger als env_rc lebt.
-fn insert_eval_closure(env_rc: Rc<RefCell<Env>>) {
-    let dest_env = env_rc.clone();
-
-    let eval_closure: Rc<CallableFun> = Rc::from(move |args: &[MalData]| { eval(env_rc.clone(), &args[0]).map_err(|e| format!("{}", e)) });
-    env_insert_fun(dest_env, "eval", eval_closure);
-}
-
 fn main() {
     env_logger::init().unwrap();
 
-    let repl_env = Env::new(None, &[], &[]).unwrap();
+    let mut repl_env = Env::new(None, &[], &[]).unwrap();
+
     let ns_map = init_ns_map();
 
-    let env_rc = Rc::from(RefCell::from(repl_env));
-
     for (sym, fun) in ns_map {
-        env_insert_fun(env_rc.clone(), sym, fun);
+        env_insert_fun(&mut repl_env, sym, fun);
     }
 
-    // 'eval' einer closure zuordnen, die eval mit REPL-env aufruft
-    insert_eval_closure(env_rc.clone());
+    let env_rc = Rc::from(RefCell::from(repl_env));
 
     rep(env_rc.clone(), "(def! not (fn* [a] (if a false true)))");
 
