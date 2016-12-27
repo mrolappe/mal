@@ -1,8 +1,13 @@
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::fs::File;
+use std::io::Read;
+use std::convert::From;
+use std::string::String;
 
 use itertools;
 
+use reader;
 use printer::pr_str;
 use common::{MalData, CallableFun};
 
@@ -251,6 +256,27 @@ fn mal_core_str(args: &[MalData]) -> Result<MalData, String> {
     Ok(MalData::String(res))
 }
 
+fn mal_core_read_string(args: &[MalData]) -> Result<MalData, String> {
+    if let Some(&MalData::String(ref string)) = args.get(0) {
+        reader::read_str(&string)
+    } else {
+        Err("string argument required".to_owned())
+    }
+}
+
+fn mal_core_slurp(args: &[MalData]) -> Result<MalData, String> {
+    if let Some(&MalData::String(ref filename)) = args.get(0) {
+        let mut file = File::open(filename).unwrap();  // TODO fehlerbehandlung
+        let mut buffer = String::new();
+
+        file.read_to_string(&mut buffer).unwrap();  // TODO fehlerbehandlung
+
+        Ok(MalData::String(buffer))
+    } else {
+        Err("file name argument required".to_owned())
+    }
+}
+
 
 pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
     let mut ns_map: HashMap<&str, Rc<CallableFun>> = HashMap::new();
@@ -273,6 +299,9 @@ pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
     ns_map.insert("str", Rc::new(mal_core_str));
     ns_map.insert("prn", Rc::new(mal_core_prn));
     ns_map.insert("println", Rc::new(mal_core_println));
+
+    ns_map.insert("read-string", Rc::new(mal_core_read_string));
+    ns_map.insert("slurp", Rc::new(mal_core_slurp));
 
     ns_map
 }
