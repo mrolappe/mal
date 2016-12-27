@@ -69,13 +69,13 @@ impl Env {
     }
 
     pub fn set(&mut self, key: &EnvKey, value: &MalData) -> () {
-        debug!("env.set, data: {:?}, k: {:?}, v: {:?}", self.data, key, value);
+        // debug!("env.set, data: {:?}, k: {:?}, v: {:?}", self.data, key, value);
         self.data.insert(key.clone(), Rc::from(value.clone()));
     }
 
     pub fn find(env: &EnvType, key: &EnvKey) -> Option<EnvType> {
         if env.borrow().data.contains_key(key) {
-            debug!("{:?} found in env {:?}", key, env);
+            // debug!("{:?} found in env {:?}", key, env);
             Some(env.clone())
         } else {
             let outer = &env.borrow().outer;
@@ -87,7 +87,7 @@ impl Env {
                 & None => None,
             };
 
-            debug!("{:?} found in outer ({:?}): {:?}", key, outer, value);
+            // debug!("{:?} found in outer ({:?}): {:?}", key, outer, value);
             value
         }
     }

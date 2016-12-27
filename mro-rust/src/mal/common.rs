@@ -20,12 +20,19 @@ pub enum MapKey {
     Number(i32),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FnClosure {
     pub outer_env: EnvType,
     pub binds: Vec<Symbol>,
     pub body: Box<MalData>
 }
+
+impl fmt::Debug for FnClosure {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FnClosure {{ binds: {:?}, body: {:?} }}", self.binds, self.body)
+    }
+}
+
 
 impl FnClosure {
     pub fn new(outer_env: EnvType, binds: &Vec<Symbol>, body: &MalData) -> FnClosure {
