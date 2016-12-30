@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::cell::RefCell;
+
 use std::fs::File;
 use std::io::Read;
 use std::convert::From;
@@ -9,33 +11,33 @@ use itertools;
 
 use reader;
 use printer::pr_str;
-use common::{MalData, CallableFun};
+use common::{MalData, CallableFun, FunContext};
 
-fn mal_core_add(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_add(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let res = number_arg(&args[0]) + number_arg(&args[1]);  // TODO fehlerbehandlung
     Ok(MalData::Number(res))
 }
 
-fn mal_core_sub(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_sub(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let res = number_arg(&args[0]) - number_arg(&args[1]);  // TODO fehlerbehandlung
     Ok(MalData::Number(res))
 }
 
-fn mal_core_mul(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_mul(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let res = number_arg(&args[0]) * number_arg(&args[1]);  // TODO fehlerbehandlung
     Ok(MalData::Number(res))
 }
 
-fn mal_core_div(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_div(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let res = number_arg(&args[0]).checked_div(number_arg(&args[1])).unwrap();  // TODO fehlerbehandlung
     Ok(MalData::Number(res))
 }
 
-fn mal_core_list(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_list(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     Ok(MalData::List(Rc::from(args.to_vec())))
 }
 
-fn mal_core_list_p(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_list_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if args.is_empty() {
         Err("argument required".to_owned())
     } else {
@@ -49,7 +51,7 @@ fn mal_core_list_p(args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn mal_core_empty_p(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_empty_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if args.is_empty() {
         Err("argument required".to_owned())
     } else {
@@ -63,7 +65,7 @@ fn mal_core_empty_p(args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn mal_core_count(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_count(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if args.is_empty() {
         Err("argument required".to_owned())
     } else {
@@ -80,7 +82,7 @@ fn mal_core_count(args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn mal_core_lt(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_lt(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // TODO fehlerbehandlung
     if args.is_empty() {
         Err("2 arguments required".to_owned())
@@ -93,7 +95,7 @@ fn mal_core_lt(args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn mal_core_le(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_le(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // TODO fehlerbehandlung
     if args.is_empty() {
         Err("2 arguments required".to_owned())
@@ -106,7 +108,7 @@ fn mal_core_le(args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn mal_core_gt(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_gt(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // TODO fehlerbehandlung
     if args.is_empty() {
         Err("2 arguments required".to_owned())
@@ -119,7 +121,7 @@ fn mal_core_gt(args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn mal_core_ge(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_ge(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // TODO fehlerbehandlung
     if args.is_empty() {
         Err("2 arguments required".to_owned())
@@ -170,7 +172,7 @@ fn are_lists_equal(l1: &MalData, l2: &MalData) -> Result<bool, String> {
     }
 }
 
-fn mal_core_equals(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_equals(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     match ( args[0].clone(), args[1].clone() ) {
         ( MalData::True, MalData::True ) =>
             Ok(MalData::True),
@@ -219,7 +221,7 @@ fn mal_core_equals(args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn mal_core_prn(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_prn(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let print_readably = true;
     let res = itertools::join(args.iter().map(|e| pr_str(e, print_readably)), " ");
     println!("{}", res);
@@ -227,7 +229,7 @@ fn mal_core_prn(args: &[MalData]) -> Result<MalData, String> {
     Ok(MalData::Nil)
 }
 
-fn mal_core_println(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_println(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let print_readably = false;
     let res = itertools::join(args.iter().map(|e| pr_str(e, print_readably)), " ");
     println!("{}", res);
@@ -235,7 +237,7 @@ fn mal_core_println(args: &[MalData]) -> Result<MalData, String> {
     Ok(MalData::Nil)
 }
 
-fn mal_core_pr_str(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_pr_str(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let print_readably = true;
 
     // res.push_str(itertools::join(args.iter().map(|e| pr_str(e, print_readably) ), " ").as_str());
@@ -245,7 +247,7 @@ fn mal_core_pr_str(args: &[MalData]) -> Result<MalData, String> {
     Ok(MalData::String(res))
 }
 
-fn mal_core_str(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_str(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let print_readably = false;
     let mut res = String::new();
     
@@ -256,7 +258,7 @@ fn mal_core_str(args: &[MalData]) -> Result<MalData, String> {
     Ok(MalData::String(res))
 }
 
-fn mal_core_read_string(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_read_string(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if let Some(&MalData::String(ref string)) = args.get(0) {
         reader::read_str(&string)
     } else {
@@ -264,7 +266,7 @@ fn mal_core_read_string(args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn mal_core_slurp(args: &[MalData]) -> Result<MalData, String> {
+fn mal_core_slurp(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if let Some(&MalData::String(ref filename)) = args.get(0) {
         let mut file = File::open(filename).unwrap();  // TODO fehlerbehandlung
         let mut buffer = String::new();
@@ -277,6 +279,86 @@ fn mal_core_slurp(args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
+fn mal_core_atom(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
+    let value = args[0].clone();
+
+    debug!("atom, value: {:?}", value);
+
+    Ok(MalData::Atom(Rc::from(RefCell::from(value))))
+}
+
+fn mal_core_atom_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
+    if let MalData::Atom(_) = args[0] { Ok(MalData::True) } else { Ok(MalData::False) }
+}
+
+fn mal_core_deref(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
+    if let MalData::Atom(ref atom) = args[0] {
+        Ok(atom.borrow().clone())
+    } else {
+        Ok(MalData::Nil)
+    }
+}
+
+fn mal_core_reset(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
+    if let MalData::Atom(ref atom) = args[0] {
+        let ref new_value = args[1];
+
+        *atom.borrow_mut() = new_value.clone();
+
+        Ok(new_value.clone())
+    } else {
+        Err("atom expected".to_owned())
+    }
+}
+
+// mro TODO geeigneten platz finden und dorthin verfrachten
+// fn apply_fn_closure(fn_closure: &FnClosure, parameters: &[MalData]) -> Result<MalData, String> {
+//     debug!("apply_fn_closure, cl: {:?}, parameters: {:?}", fn_closure, parameters);
+
+//     let outer_env = fn_closure.outer_env.clone();
+//     let fn_env = Env::new(Some(outer_env), fn_closure.binds.as_slice(), parameters)?;
+
+//     eval(Rc::new(RefCell::new(fn_env)), fn_closure.body.as_ref())
+// }
+
+fn mal_core_swap(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
+    if let MalData::Atom(ref atom) = args[0] {
+        let ref atom_fn = args[1];
+        let old_value = atom.borrow().clone();
+
+        debug!("swap!, atom: {:?}, fn: {:?}", atom, atom_fn);
+
+        match atom_fn {
+            &MalData::FnClosure(_) | &MalData::Function(_) => {
+                let mut list = vec!(atom_fn.clone(), old_value.clone());
+
+                // zusaetzliche parameter uebergeben
+                if args.len() > 2 {
+                    list.extend_from_slice(&args[2..]);
+                }
+
+                let new_value_form = MalData::List(Rc::from(list));
+
+                if let Some(ref eval) = ctx.eval.as_ref() {
+                    let new_value = eval(ctx, &[new_value_form])?;
+                    debug!("swap!, atom_fn({:?}) -> {:?}", old_value.clone(), new_value);
+
+                    *atom.borrow_mut() = new_value.clone();
+
+                    Ok(new_value)
+                } else {
+                    return Err("evaluator function not set in context".to_owned())
+                }
+            }
+
+            _ => 
+                return Err("atom value update function expected".to_owned())
+        }
+
+    } else {
+        Err("atom expected".to_owned())
+    }
+}
 
 pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
     let mut ns_map: HashMap<&str, Rc<CallableFun>> = HashMap::new();
@@ -302,6 +384,12 @@ pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
 
     ns_map.insert("read-string", Rc::new(mal_core_read_string));
     ns_map.insert("slurp", Rc::new(mal_core_slurp));
+
+    ns_map.insert("atom", Rc::new(mal_core_atom));
+    ns_map.insert("atom?", Rc::new(mal_core_atom_p));
+    ns_map.insert("deref", Rc::new(mal_core_deref));
+    ns_map.insert("reset!", Rc::new(mal_core_reset));
+    ns_map.insert("swap!", Rc::new(mal_core_swap));
 
     ns_map
 }

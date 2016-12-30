@@ -27,9 +27,13 @@ path = "src/mal/lib.rs"
 # name = "step4_if_fn_do"
 # path = "src/bin/step4_if_fn_do.rs"
 
+# [[bin]]
+# name = "step5_tco"
+# path = "src/bin/step5_tco.rs"
+
 [[bin]]
-name = "step5_tco"
-path = "src/bin/step5_tco.rs"
+name = "step6_file"
+path = "src/bin/step6_file.rs"
 
 [dependencies]
 regex = "0.1.80"

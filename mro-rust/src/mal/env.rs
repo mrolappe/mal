@@ -93,11 +93,14 @@ impl Env {
     }
 
     pub fn get<'e>(env: &'e EnvType, key: &EnvKey) -> Option<Rc<MalData>> {
-        match Env::find(env, key) {
+        let val = match Env::find(env, key) {
             Some(env) =>
                 Some(env.borrow().data.get(key).unwrap().clone()),
             None =>
                 None
-        }
+        };
+
+        debug!("Env::get, key: {} -> {:?}", key, val);
+        val
     }
 }

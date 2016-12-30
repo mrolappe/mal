@@ -29,6 +29,7 @@ impl<'d> PrStr for MalData {
     fn pr_str(&self, print_readably: bool) -> String {
         match *self {
             MalData::Nothing => "".to_owned(),
+            MalData::Atom(ref atom) => format!("(atom {})", atom.borrow().pr_str(print_readably)),
             MalData::Nil => "nil".to_owned(),
             MalData::True => "true".to_owned(),
             MalData::False => "false".to_owned(),

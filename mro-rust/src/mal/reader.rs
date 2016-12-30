@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 use regex::Regex;
 use std::rc::Rc;
-
 use common::MalData;
 use common::MapKey;
 
 struct Reader<'r> {
-    tokens: &'r Vec<&'r str>,
+    tokens: Vec<&'r str>,
     index: usize,
 }
 
@@ -14,8 +13,10 @@ type ReaderError = String;  // TODO eigener typ
 
 impl<'r> Reader<'r> {
     pub fn new(tokens: &'r Vec<&'r str>) -> Reader<'r> {
+        let filtered = tokens.iter().filter( |el| !el.starts_with(";")).map( |el| *el).collect::<Vec<&str>>();
+
         Reader {
-            tokens: tokens,
+            tokens: filtered,
             index: 0,
         }
     }
@@ -71,6 +72,8 @@ fn tokenizer(input: &str) -> Vec<&str> {
 }
 
 fn read_form(reader: &mut Reader) -> Result<MalData, String> {
+    debug!("read_form, peek: {:?}", reader.peek());
+
     // erstes token des readers untersuchen
     // unterscheidung nach erstem zeichen des tokens
     let result = match reader.peek() {
@@ -94,19 +97,21 @@ fn read_form(reader: &mut Reader) -> Result<MalData, String> {
             Err(From::from("unbalanced parenthesis"))
         }
 
+        Some("@") => {
+            reader.next();
+            let next_form = read_form(reader)?;
+            let list = vec!(MalData::Symbol("deref".to_owned()), next_form);
+
+            Ok(MalData::List(Rc::from(list)))
+        }
         // sonst read_atom mit reader aufrufen
         Some(_) => {
-            if reader.peek().unwrap().starts_with(";") {
-                reader.next();
-                Ok(MalData::Nothing)    // TODO spezieller rueckgabewert eines speziellen rueckgabetyps?
-            } else {
-                let atom = read_atom(reader);
-                atom.ok_or("failed to read atom".to_owned())
-            }
-
+            let atom = read_atom(reader);
+            atom.ok_or("failed to read atom".to_owned())
         }
 
-        None => Ok(MalData::Nothing),    // TODO
+        None =>
+            Ok(MalData::Nothing),    // TODO
     };
 
     // rueckgabe: mal datentyp
@@ -117,30 +122,42 @@ fn read_form(reader: &mut Reader) -> Result<MalData, String> {
 fn read_list(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderError> {
     let mut items = Vec::new();
 
-    trace!("read_list, delim: {}", delim);
+    debug!("> read_list, delim: {}", delim);
 
     // read_form so lange mit reader aufrufen, bis zum auftreten eines ')'
     loop {
+        // kommentare verschlucken
+        while reader.peek().unwrap().starts_with(";") {
+            reader.next();
+        }
+
         match (reader.peek(), delim) {
             // die ergebnisse werden in einer liste gesammelt
             (Some(")"), ")") => {
                 reader.next();
-                return Ok(MalData::List(Rc::new(items)));
+                let list = MalData::List(Rc::new(items));
+                debug!("< read_list, delim: {}, list: {:?}", delim, list);
+                return Ok(list);
             }
 
             (Some("]"), "]") => {
                 reader.next();
-                return Ok(MalData::Vector(Rc::new(items)));
+                let list = MalData::Vector(Rc::new(items));
+                debug!("< read_list, delim: {}, list: {:?}", delim, list);
+                return Ok(list);
             }
 
             (Some("}"), "}") => {
                 reader.next();
-                return Ok(MalData::Map(hashmap_from_kv_list(items).unwrap()));
+                let list = MalData::Map(hashmap_from_kv_list(items).unwrap());
+                debug!("< read_list, delim: {}, list: {:?}", delim, list);
+                return Ok(list);
             }
 
-            (Some(_), _) => {
+            (Some(_), delim) => {
+                debug!("read_list, next: {:?}, delim: {:?}", reader.peek(), delim);
                 let form = read_form(reader);
-                debug!("form: {:?}", &form);
+                debug!("read_list, delim: {:?}, form: {:?}", delim, &form);
                 items.push(form.unwrap());
             }
 
@@ -208,7 +225,7 @@ fn read_atom(reader: &mut Reader) -> Option<MalData> {
 
     // wert eines entsprechenden datentyps (z.b. ganzzahl oder symbol)
     // zurueckliefern anhand des token-inhalts
-    match atom {
+    let res = match atom {
         Some(str) if str.starts_with("\"") && str.ends_with("\"") => {
             let str_content = &str[1..str.len() - 1];    // ohne die anfuehrungszeichen
             Some(MalData::String(transform_string(str_content)))
@@ -240,7 +257,11 @@ fn read_atom(reader: &mut Reader) -> Option<MalData> {
         Some(other) => Some(MalData::Symbol(other.to_string())),
 
         None => None
-    }
+    };
+
+    debug!("> read_atom, {:?} -> {:?}", atom, res);
+
+    res
 }
 
 fn transform_string(string: &str) -> String {
