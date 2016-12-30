@@ -360,6 +360,39 @@ fn mal_core_swap(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> 
     }
 }
 
+fn mal_core_cons(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
+    if let ( Some(head), Some(&MalData::List(ref tail)) ) = ( args.get(0), args.get(1) ) {
+        let new_len = 1 + tail.len();
+        let mut new_vec: Vec<MalData> = Vec::with_capacity(new_len);
+
+        new_vec.push(head.clone());
+        new_vec.extend_from_slice(&tail[..]);
+
+        Ok(MalData::List(Rc::from(new_vec)))
+    } else {
+        Err("head and tail required".to_owned())
+    }
+}
+
+fn mal_core_concat(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
+    if !args.iter().all( |arg| if let &MalData::List(_) = arg { true } else { false }) {
+        return Err("only list arguments allowed".to_owned())
+    }
+
+    let mut new_vec = Vec::new();
+
+    for arg in args {
+        if let &MalData::List(ref list) = arg {
+            new_vec.extend_from_slice(&list[..]);
+        }
+    }
+
+    Ok(MalData::List(Rc::from(new_vec)))
+}
+
+// fn mal_core_(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
+// }
+
 pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
     let mut ns_map: HashMap<&str, Rc<CallableFun>> = HashMap::new();
 
@@ -390,6 +423,9 @@ pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
     ns_map.insert("deref", Rc::new(mal_core_deref));
     ns_map.insert("reset!", Rc::new(mal_core_reset));
     ns_map.insert("swap!", Rc::new(mal_core_swap));
+
+    ns_map.insert("cons", Rc::new(mal_core_cons));
+    ns_map.insert("concat", Rc::new(mal_core_concat));
 
     ns_map
 }
