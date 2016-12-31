@@ -100,7 +100,7 @@ impl Env {
                 None
         };
 
-        debug!("Env::get, key: {} -> {:?}", key, val);
+        trace!("Env::get, key: {} -> {:?}", key, val);
         val
     }
 }

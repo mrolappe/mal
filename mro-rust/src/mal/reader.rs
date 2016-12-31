@@ -72,7 +72,7 @@ fn tokenizer(input: &str) -> Vec<&str> {
 }
 
 fn read_form(reader: &mut Reader) -> Result<MalData, String> {
-    debug!("read_form, peek: {:?}", reader.peek());
+    trace!("read_form, peek: {:?}", reader.peek());
 
     // erstes token des readers untersuchen
     // unterscheidung nach erstem zeichen des tokens

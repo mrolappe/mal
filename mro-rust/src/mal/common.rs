@@ -30,7 +30,8 @@ pub enum MapKey {
 pub struct FnClosure {
     pub outer_env: EnvType,
     pub binds: Vec<Symbol>,
-    pub body: Box<MalData>
+    pub body: Box<MalData>,
+    pub is_macro: bool
 }
 
 impl fmt::Debug for FnClosure {
@@ -42,7 +43,15 @@ impl fmt::Debug for FnClosure {
 
 impl FnClosure {
     pub fn new(outer_env: EnvType, binds: &Vec<Symbol>, body: &MalData) -> FnClosure {
-        FnClosure { outer_env: outer_env, binds: binds.clone(), body: Box::new(body.clone()) }
+        FnClosure { outer_env: outer_env, binds: binds.clone(), body: Box::new(body.clone()), is_macro: false }
+    }
+
+    pub fn to_macro(&self) -> FnClosure {
+        FnClosure { outer_env: self.outer_env.clone(), binds: self.binds.clone(), body: Box::new((*self.body).clone()), is_macro: true }
+    }
+
+    pub fn is_macro(&self) -> bool {
+        self.is_macro
     }
 }
 
@@ -125,6 +134,10 @@ pub fn mal_list_from_slice(slice: &[MalData]) -> MalData {
 
 fn is_mal_symbol(ast: &MalData) -> bool {
     if let &MalData::Symbol(_) = ast { true } else { false }
+}
+
+pub fn is_mal_list(ast: &MalData) -> bool {
+    if let &MalData::List(_) = ast { true } else { false }
 }
 
 pub fn mal_symbol_name(ast: &MalData) -> Option<String> {
