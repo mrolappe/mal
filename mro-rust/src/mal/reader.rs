@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use regex::Regex;
 use std::rc::Rc;
-use common::MalData;
-use common::MapKey;
+
+use common::{MalData, MapKey, mal_list_from_vec, mal_str_symbol};
 
 struct Reader<'r> {
     tokens: Vec<&'r str>,
@@ -100,10 +100,35 @@ fn read_form(reader: &mut Reader) -> Result<MalData, String> {
         Some("@") => {
             reader.next();
             let next_form = read_form(reader)?;
-            let list = vec!(MalData::Symbol("deref".to_owned()), next_form);
+            let list = vec!(mal_str_symbol("deref"), next_form);
 
             Ok(MalData::List(Rc::from(list)))
         }
+
+        // quote
+        Some("'") => {
+            reader.next();
+            Ok(mal_list_from_vec(vec![ mal_str_symbol("quote"), read_form(reader)? ]))
+        }
+
+        // quasiquote
+        Some("`") => {
+            reader.next();
+            Ok(mal_list_from_vec(vec![ mal_str_symbol("quasiquote"), read_form(reader)? ]))
+        }
+
+        // unquote
+        Some("~") => {
+            reader.next();
+            Ok(mal_list_from_vec(vec![ mal_str_symbol("unquote"), read_form(reader)? ]))
+        }
+
+        // splice-unquote
+        Some("~@") => {
+            reader.next();
+            Ok(mal_list_from_vec(vec![ mal_str_symbol("splice-unquote"), read_form(reader)? ]))
+        }
+
         // sonst read_atom mit reader aufrufen
         Some(_) => {
             let atom = read_atom(reader);
@@ -180,7 +205,7 @@ fn mapkey_for(atom: &MalData) -> Result<MapKey, ReaderError> {
             Ok(MapKey::String(string.clone())),
 
         MalData::Symbol(ref string) =>
-            Ok(MapKey::Symbol(string.clone())),
+            Ok(MapKey::Symbol(string.to_string())),
 
         MalData::Keyword(ref string) =>
             Ok(MapKey::Keyword(string.clone())),
@@ -254,7 +279,8 @@ fn read_atom(reader: &mut Reader) -> Option<MalData> {
             Some(MalData::Keyword('\u{29e}'.to_string() + kw))
         }
 
-        Some(other) => Some(MalData::Symbol(other.to_string())),
+        Some(other) =>
+            Some(mal_str_symbol(other.clone())),
 
         None => None
     };

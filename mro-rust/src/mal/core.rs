@@ -11,32 +11,40 @@ use itertools;
 
 use reader;
 use printer::pr_str;
-use common::{MalData, CallableFun, FunContext};
 
+use common::{MalData, CallableFun, FunContext};
+use common::mal_list_from_vec;
+
+#[allow(unused_variables)]
 fn mal_core_add(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let res = number_arg(&args[0]) + number_arg(&args[1]);  // TODO fehlerbehandlung
     Ok(MalData::Number(res))
 }
 
+#[allow(unused_variables)]
 fn mal_core_sub(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let res = number_arg(&args[0]) - number_arg(&args[1]);  // TODO fehlerbehandlung
     Ok(MalData::Number(res))
 }
 
+#[allow(unused_variables)]
 fn mal_core_mul(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let res = number_arg(&args[0]) * number_arg(&args[1]);  // TODO fehlerbehandlung
     Ok(MalData::Number(res))
 }
 
+#[allow(unused_variables)]
 fn mal_core_div(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let res = number_arg(&args[0]).checked_div(number_arg(&args[1])).unwrap();  // TODO fehlerbehandlung
     Ok(MalData::Number(res))
 }
 
+#[allow(unused_variables)]
 fn mal_core_list(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     Ok(MalData::List(Rc::from(args.to_vec())))
 }
 
+#[allow(unused_variables)]
 fn mal_core_list_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if args.is_empty() {
         Err("argument required".to_owned())
@@ -51,6 +59,7 @@ fn mal_core_list_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_empty_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if args.is_empty() {
         Err("argument required".to_owned())
@@ -65,6 +74,7 @@ fn mal_core_empty_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, Strin
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_count(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if args.is_empty() {
         Err("argument required".to_owned())
@@ -82,6 +92,7 @@ fn mal_core_count(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String>
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_lt(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // TODO fehlerbehandlung
     if args.is_empty() {
@@ -95,6 +106,7 @@ fn mal_core_lt(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_le(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // TODO fehlerbehandlung
     if args.is_empty() {
@@ -108,6 +120,7 @@ fn mal_core_le(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_gt(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // TODO fehlerbehandlung
     if args.is_empty() {
@@ -121,6 +134,7 @@ fn mal_core_gt(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_ge(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // TODO fehlerbehandlung
     if args.is_empty() {
@@ -172,6 +186,7 @@ fn are_lists_equal(l1: &MalData, l2: &MalData) -> Result<bool, String> {
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_equals(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     match ( args[0].clone(), args[1].clone() ) {
         ( MalData::True, MalData::True ) =>
@@ -186,8 +201,11 @@ fn mal_core_equals(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String
         ( MalData::Nil, _ ) =>
             Ok(MalData::False),
 
-        ( MalData::Keyword(kw1), MalData::Keyword(kw2)) =>
+        ( MalData::Keyword(kw1), MalData::Keyword(kw2) ) =>
             Ok(if kw1 == kw2 { MalData::True } else { MalData::False }),
+
+        ( MalData::Symbol(sym1), MalData::Symbol(sym2) ) =>
+            Ok(if sym1 == sym2 { MalData::True } else { MalData::False }),
 
         ( MalData::Keyword(_), _) =>
             Ok(MalData::False),
@@ -201,26 +219,19 @@ fn mal_core_equals(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String
         ( MalData::String(s1), MalData::String(s2) ) =>
             Ok(if s1 == s2 { MalData::True } else { MalData::False }),
 
-        // ( MalData::List(ref l1), MalData::List(ref l2) )
-        //     | ( MalData::List(ref l1), MalData::Vector(ref l2) )
-        //     | ( MalData::Vector(ref l1), MalData::List(ref l2) )
-        //     | ( MalData::Vector(ref l1), MalData::Vector(ref l2) )
-        //     if l1.len() == l2.len() => {
-        //         let res = l1.iter().zip(l2.iter()).all( |( e1, e2 )| e1 == e2);
-        //         Ok(if res { MalData::True } else { MalData::False })
-        //     }
-
         ( ref l1, ref l2 )
             if is_list_like(&l1) && is_list_like(&l2) => {
-            // let res = l1.iter().zip(l2.iter()).all( |( e1, e2 )| e1 == e2);
             Ok(if are_lists_equal(&l1, &l2).unwrap() { MalData::True } else { MalData::False })
         }
 
-        _ =>
+        ( l, r ) => {
+            debug!("equals, default -> false; l: {:?}, r: {:?}", l, r);
             Ok(MalData::False)
+        }
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_prn(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let print_readably = true;
     let res = itertools::join(args.iter().map(|e| pr_str(e, print_readably)), " ");
@@ -229,6 +240,7 @@ fn mal_core_prn(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     Ok(MalData::Nil)
 }
 
+#[allow(unused_variables)]
 fn mal_core_println(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let print_readably = false;
     let res = itertools::join(args.iter().map(|e| pr_str(e, print_readably)), " ");
@@ -237,27 +249,26 @@ fn mal_core_println(ctx: &FunContext, args: &[MalData]) -> Result<MalData, Strin
     Ok(MalData::Nil)
 }
 
+#[allow(unused_variables)]
 fn mal_core_pr_str(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let print_readably = true;
 
-    // res.push_str(itertools::join(args.iter().map(|e| pr_str(e, print_readably) ), " ").as_str());
     let res = itertools::join(args.iter().map(|e| pr_str(e, print_readably) ), " ");
-    // println!("pr-str, res: {}", res);
 
     Ok(MalData::String(res))
 }
 
+#[allow(unused_variables)]
 fn mal_core_str(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let print_readably = false;
     let mut res = String::new();
     
     res.push_str(itertools::join(args.iter().map(|e| pr_str(e, print_readably)), "").as_str());
 
-    // println!("res: {}", res);
-
     Ok(MalData::String(res))
 }
 
+#[allow(unused_variables)]
 fn mal_core_read_string(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if let Some(&MalData::String(ref string)) = args.get(0) {
         reader::read_str(&string)
@@ -266,6 +277,7 @@ fn mal_core_read_string(ctx: &FunContext, args: &[MalData]) -> Result<MalData, S
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_slurp(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if let Some(&MalData::String(ref filename)) = args.get(0) {
         let mut file = File::open(filename).unwrap();  // TODO fehlerbehandlung
@@ -279,6 +291,7 @@ fn mal_core_slurp(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String>
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_atom(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     let value = args[0].clone();
 
@@ -287,10 +300,12 @@ fn mal_core_atom(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> 
     Ok(MalData::Atom(Rc::from(RefCell::from(value))))
 }
 
+#[allow(unused_variables)]
 fn mal_core_atom_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if let MalData::Atom(_) = args[0] { Ok(MalData::True) } else { Ok(MalData::False) }
 }
 
+#[allow(unused_variables)]
 fn mal_core_deref(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if let MalData::Atom(ref atom) = args[0] {
         Ok(atom.borrow().clone())
@@ -299,6 +314,7 @@ fn mal_core_deref(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String>
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_reset(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
     if let MalData::Atom(ref atom) = args[0] {
         let ref new_value = args[1];
@@ -321,6 +337,7 @@ fn mal_core_reset(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String
 //     eval(Rc::new(RefCell::new(fn_env)), fn_closure.body.as_ref())
 // }
 
+#[allow(unused_variables)]
 fn mal_core_swap(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if let MalData::Atom(ref atom) = args[0] {
         let ref atom_fn = args[1];
@@ -360,23 +377,39 @@ fn mal_core_swap(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> 
     }
 }
 
+#[allow(unused_variables)]
 fn mal_core_cons(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
-    if let ( Some(head), Some(&MalData::List(ref tail)) ) = ( args.get(0), args.get(1) ) {
-        let new_len = 1 + tail.len();
-        let mut new_vec: Vec<MalData> = Vec::with_capacity(new_len);
+    match ( args.get(0), args.get(1) ) {
+        ( Some(head), Some(&MalData::List(ref tail)) ) |
+        ( Some(head), Some(&MalData::Vector(ref tail)) ) => {
+            let new_len = 1 + tail.len();
+            let mut new_vec: Vec<MalData> = Vec::with_capacity(new_len);
 
-        new_vec.push(head.clone());
-        new_vec.extend_from_slice(&tail[..]);
+            new_vec.push(head.clone());
+            new_vec.extend_from_slice(&tail[..]);
 
-        Ok(MalData::List(Rc::from(new_vec)))
-    } else {
-        Err("head and tail required".to_owned())
+            Ok(mal_list_from_vec(new_vec))
+        }
+
+        _ =>
+            Err("head and tail required".to_owned())
     }
 }
 
+fn is_mal_list_or_vector(ast: &MalData) -> bool {
+    if let &MalData::List(_) = ast {
+        true
+    } else if let &MalData::Vector(_) = ast {
+        true
+    } else {
+        false
+    }
+}
+
+#[allow(unused_variables)]
 fn mal_core_concat(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
-    if !args.iter().all( |arg| if let &MalData::List(_) = arg { true } else { false }) {
-        return Err("only list arguments allowed".to_owned())
+    if !args.iter().all( |arg| is_mal_list_or_vector(arg)) {
+        return Err("only list and vector arguments allowed".to_owned())
     }
 
     let mut new_vec = Vec::new();
@@ -384,10 +417,12 @@ fn mal_core_concat(ctx: &FunContext, args: & [MalData]) -> Result<MalData, Strin
     for arg in args {
         if let &MalData::List(ref list) = arg {
             new_vec.extend_from_slice(&list[..]);
+        } else if let &MalData::Vector(ref list) = arg {
+            new_vec.extend_from_slice(&list[..]);
         }
     }
 
-    Ok(MalData::List(Rc::from(new_vec)))
+    Ok(mal_list_from_vec(new_vec))
 }
 
 // fn mal_core_(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {

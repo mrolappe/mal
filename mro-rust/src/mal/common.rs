@@ -111,3 +111,26 @@ impl NativeFunction {
 }
 
 
+pub fn mal_str_symbol(sym: &str) -> MalData {
+    MalData::Symbol(sym.to_string())
+}
+
+pub fn mal_list_from_vec(vec: Vec<MalData>) -> MalData {
+    MalData::List(Rc::from(vec))
+}
+
+pub fn mal_list_from_slice(slice: &[MalData]) -> MalData {
+    MalData::List(Rc::from(slice.to_vec()))
+}
+
+fn is_mal_symbol(ast: &MalData) -> bool {
+    if let &MalData::Symbol(_) = ast { true } else { false }
+}
+
+pub fn mal_symbol_name(ast: &MalData) -> Option<String> {
+    if let &MalData::Symbol(ref sym) = ast {
+        Some(sym.to_string())
+    } else {
+        None
+    }
+}

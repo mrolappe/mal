@@ -26,12 +26,19 @@ use mal::common::MalData;
 use mal::common::MapKey;
 use mal::common::NativeFunction;
 use mal::common::{FnClosure, CallableFun, FunContext};
+use mal::common::{mal_list_from_vec, mal_str_symbol, mal_symbol_name, mal_list_from_slice};
 
 use mal::core::init_ns_map;
 
 #[derive(Debug, Clone)]
 enum EvalError {
     General(String)
+}
+
+impl From<&'static str> for EvalError {
+    fn from(err: &str) -> Self {
+        EvalError::General(err.to_string())
+    }
 }
 
 impl From<String> for EvalError {
@@ -109,6 +116,63 @@ fn eval_def(env: EnvType, name: Option<&MalData>, value: Option<&MalData>) -> Re
             let err_msg = format!("unhandled in def!, key: {:?}, value: {:?}", key, value);
             Err(EvalError::General(err_msg.to_owned()))
         }
+    }
+}
+
+fn is_pair(ast: &MalData) -> bool {
+    match ast {
+        &MalData::List(ref list) | &MalData::Vector(ref list) =>
+            !list.is_empty(),
+
+        _ =>
+            false
+    }
+}
+
+fn get_wrapped_list(ast: &MalData) -> Option<&Vec<MalData>> {
+    match ast {
+        &MalData::List(ref list) | &MalData::Vector(ref list) =>
+            Some(list),
+
+        _ =>
+            None
+    }
+}
+
+fn is_symbol_named(ast: &MalData, name: &str) -> bool {
+    if let &MalData::Symbol(ref sym) = ast {
+        sym == name
+    } else {
+        false
+    }
+}
+
+fn quasiquote(ast: &MalData) -> Result<MalData, EvalError> {
+    debug!("quasiquote, ast: {:?}", ast);
+
+    if !is_pair(ast) {
+        let res = mal_list_from_vec(vec![mal_str_symbol("quote"), ast.clone()]);
+        debug!("quasiquote, !pair; res: {:?}", res);
+        return Ok(res);
+    } else if let Some(list) = get_wrapped_list(ast) {
+        let first = list.first().unwrap();
+        let first_as_list = if is_pair(first) { get_wrapped_list(first) } else { None };
+
+        if mal_symbol_name(first).map_or(false, |sym| sym == "unquote") {
+            return Ok(list.get(1).ok_or("expected form to unquote")?.clone())
+        } else if is_pair(first) && first_as_list.map_or(false, |l| l.first().map_or(false, |f| is_symbol_named(f, "splice-unquote"))) {
+            let to_unquote = first_as_list.map( |l| l.get(1) ).ok_or("expected form to unquote")?.unwrap();
+            let quasiquote_rest = quasiquote(&mal_list_from_slice(&list[1..]))?;
+
+            return Ok(mal_list_from_vec(vec![mal_str_symbol("concat"), to_unquote.clone(), quasiquote_rest]))
+        } else {
+            let quasiquote_first = quasiquote(&first)?;
+            let quasiquote_rest = quasiquote(&mal_list_from_slice(&list[1..]))?;
+
+            return Ok(mal_list_from_vec(vec![mal_str_symbol("cons"), quasiquote_first, quasiquote_rest]));
+        }
+    } else {
+        panic!("quasiquote, ast: {:?}", ast);
     }
 }
 
@@ -231,6 +295,16 @@ fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
                             return res;
                         }
 
+                        "quote" => {
+                            debug!("eval, quote; arg: {:?}", &list[1]);
+                            return Ok((&list[1]).clone());
+                        }
+
+                        "quasiquote" => {
+                            debug!("eval, quasiquote");
+                            tco_ast = quasiquote(list.get(1).ok_or("form required")?)?;
+                            continue;
+                        }
                         _ => (),
                     }
                 }
@@ -464,6 +538,7 @@ fn main() {
         debug!("main loop");
 
         print!("user> ");
+        #[allow(unused_must_use)]
         io::stdout().flush();
 
         match io::stdin().read_line(&mut input) {
