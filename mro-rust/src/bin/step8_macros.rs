@@ -26,7 +26,7 @@ use mal::common::MalData;
 use mal::common::MapKey;
 use mal::common::NativeFunction;
 use mal::common::{FnClosure, CallableFun, FunContext};
-use mal::common::{mal_list_from_vec, mal_str_symbol, mal_symbol_name, mal_list_from_slice, is_mal_list};
+use mal::common::{mal_list_from_vec, mal_str_symbol, mal_symbol_name, mal_list_from_slice, is_mal_list, get_wrapped_list};
 
 use mal::core::init_ns_map;
 
@@ -72,7 +72,7 @@ fn call_function(env: EnvType, f: & NativeFunction, args: & [MalData]) -> Result
         for arg in args { trace!("arg: {:?}", arg) };
     }
 
-    trace!("call_function, result: {:?}", result);
+    debug!("call_function, result: {:?}", result);
     result.map_err( | e | EvalError::from(e))
 }
 
@@ -159,16 +159,6 @@ fn is_pair(ast: &MalData) -> bool {
     }
 }
 
-fn get_wrapped_list(ast: &MalData) -> Option<&Vec<MalData>> {
-    match ast {
-        &MalData::List(ref list) | &MalData::Vector(ref list) =>
-            Some(list),
-
-        _ =>
-            None
-    }
-}
-
 fn is_symbol_named(ast: &MalData, name: &str) -> bool {
     if let &MalData::Symbol(ref sym) = ast {
         sym == name
@@ -178,28 +168,53 @@ fn is_symbol_named(ast: &MalData, name: &str) -> bool {
 }
 
 fn quasiquote(ast: &MalData) -> Result<MalData, EvalError> {
-    debug!("quasiquote, ast: {:?}", ast);
+    debug!("> quasiquote, ast: {:?}", ast);
 
     if !is_pair(ast) {
         let res = mal_list_from_vec(vec![mal_str_symbol("quote"), ast.clone()]);
-        debug!("quasiquote, !pair; res: {:?}", res);
+        debug!("< quasiquote, !pair; res: {:?}", res);
         return Ok(res);
     } else if let Some(list) = get_wrapped_list(ast) {
         let first = list.first().unwrap();
         let first_as_list = if is_pair(first) { get_wrapped_list(first) } else { None };
 
         if mal_symbol_name(first).map_or(false, |sym| sym == "unquote") {
-            return Ok(list.get(1).ok_or("expected form to unquote")?.clone())
+            let res = list.get(1).ok_or("expected form to unquote")?.clone();
+            debug!("< unquote, res: {:?}", res);
+
+            return Ok(res)
         } else if is_pair(first) && first_as_list.map_or(false, |l| l.first().map_or(false, |f| is_symbol_named(f, "splice-unquote"))) {
             let to_unquote = first_as_list.map( |l| l.get(1) ).ok_or("expected form to unquote")?.unwrap();
-            let quasiquote_rest = quasiquote(&mal_list_from_slice(&list[1..]))?;
+            debug!("splice-unquote, to_unquote: {:?}", to_unquote);
 
-            return Ok(mal_list_from_vec(vec![mal_str_symbol("concat"), to_unquote.clone(), quasiquote_rest]))
+            let quasiquote_rest = if list.len() > 1 {
+                quasiquote(&mal_list_from_slice(&list[1..]))?
+            } else {
+                MalData::Nil
+            };
+
+            debug!("splice-unquote, quasiquote_rest: {:?}", quasiquote_rest);
+
+            let res = if list.len() > 1 {
+                mal_list_from_vec(vec![mal_str_symbol("concat"), to_unquote.clone(), quasiquote_rest])
+            } else {
+                mal_list_from_vec(vec![mal_str_symbol("concat"), to_unquote.clone()])
+            };
+
+            debug!("< splice-unquote, res: {:?}", res);
+
+            return Ok(res)
         } else {
             let quasiquote_first = quasiquote(&first)?;
-            let quasiquote_rest = quasiquote(&mal_list_from_slice(&list[1..]))?;
+            debug!("quasiquote, first: {:?}", quasiquote_first);
 
-            return Ok(mal_list_from_vec(vec![mal_str_symbol("cons"), quasiquote_first, quasiquote_rest]));
+            let quasiquote_rest = quasiquote(&mal_list_from_slice(&list[1..]))?;
+            debug!("quasiquote, rest: {:?}", quasiquote_rest);
+
+            let res = mal_list_from_vec(vec![mal_str_symbol("cons"), quasiquote_first, quasiquote_rest]);
+            debug!("< quasiquote, res: {:?}", res);
+
+            return Ok(res);
         }
     } else {
         panic!("quasiquote, ast: {:?}", ast);
@@ -256,23 +271,26 @@ fn macroexpand(env: EnvType, ast: &MalData) -> Result<MalData, EvalError> {
     let mut expand_ast = ast.clone();
 
     while is_macro_call(env.clone(), &expand_ast) {
-        let list_head = mal_list_head(ast);
+        let curr_ast = expand_ast.clone();  // FIXME schauen, ob auch ohne klonen moeglich
+        let list_head = { mal_list_head(&curr_ast) };
 
-        debug!("macro call, list_head: {:?}", list_head);
+        debug!("macro call, list_head: {:?}, expand_ast: {:?}\n", list_head, expand_ast);
 
         if let Some(& MalData::Symbol(ref sym)) = list_head {
-            Env::get(&env, sym).map( |symval| {
+            let expanded = Env::get(&env, sym).map( |symval| {
                 if let & MalData::FnClosure(ref fnc) = symval.as_ref() {
                     let empty_args = vec![];
-                    let macro_args: &[MalData] = get_wrapped_list(ast).map_or(&empty_args, |l| &l[1..]);
+                    let macro_args: &[MalData] = get_wrapped_list(&curr_ast).map_or(&empty_args, |l| &l[1..]);
 
                     debug!("macro call, fnc: {:?}, args: {:?}", fnc, macro_args);
 
-                    expand_ast = mal_closure_apply(env.clone(), fnc, macro_args).unwrap();
+                    mal_closure_apply(env.clone(), fnc, macro_args)
                 } else {
                     panic!("in macro call, not a closure: {:?}", symval);
-                };
-            });
+                }
+            }).unwrap();
+
+            expand_ast = try!(expanded);
         } else {
             panic!("in macro call, expected symbol, got: {:?}", list_head);
         };
@@ -626,6 +644,12 @@ fn main() {
     // load-file
     rep(env_rc.clone(), "(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \")\")))))");
 
+    // cond
+    rep(env_rc.clone(), "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))");
+
+    // or
+    rep(env_rc.clone(), "(defmacro! or (fn* (& xs) (if (empty? xs) nil (if (= 1 (count xs)) (first xs) `(let* (or_FIXME ~(first xs)) (if or_FIXME or_FIXME (or ~@(rest xs))))))))");
+
     let empty_list = MalData::List(Rc::from(vec![]));
 
     if env::args().len() >= 2 {
@@ -662,7 +686,7 @@ fn main() {
     loop {
         let mut input = &mut String::new();
 
-        debug!("main loop");
+        trace!("main loop");
 
         print!("user> ");
         #[allow(unused_must_use)]
