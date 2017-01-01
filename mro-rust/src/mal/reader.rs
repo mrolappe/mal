@@ -152,7 +152,7 @@ fn read_list(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderError> {
     // read_form so lange mit reader aufrufen, bis zum auftreten eines ')'
     loop {
         // kommentare verschlucken
-        while reader.peek().unwrap().starts_with(";") {
+        while reader.peek().map_or(false, |p| p.starts_with(";")) {
             reader.next();
         }
 
@@ -183,7 +183,7 @@ fn read_list(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderError> {
                 debug!("read_list, next: {:?}, delim: {:?}", reader.peek(), delim);
                 let form = read_form(reader);
                 debug!("read_list, delim: {:?}, form: {:?}", delim, &form);
-                items.push(form.unwrap());
+                items.push(form?);
             }
 
             (None, delim) => {

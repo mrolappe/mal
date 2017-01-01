@@ -13,7 +13,7 @@ use reader;
 use printer::pr_str;
 
 use common::{MalData, CallableFun, FunContext};
-use common::mal_list_from_vec;
+use common::{mal_list_from_vec, get_wrapped_list};
 
 #[allow(unused_variables)]
 fn mal_core_add(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
@@ -67,6 +67,9 @@ fn mal_core_empty_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, Strin
         match args[0] {
             MalData::List(ref l) | MalData::Vector(ref l) =>
                 Ok(if l.is_empty() { MalData::True } else { MalData::False }),
+
+            MalData::Nil =>
+                Ok(MalData::True),
 
             _ =>
                 Ok(MalData::False)
@@ -425,6 +428,68 @@ fn mal_core_concat(ctx: &FunContext, args: & [MalData]) -> Result<MalData, Strin
     Ok(mal_list_from_vec(new_vec))
 }
 
+fn mal_number_value(mal_num: &MalData) -> Option<i32> {
+    if let &MalData::Number(num) = mal_num {
+        Some(num)
+    } else {
+        None
+    }
+}
+
+fn mal_core_nth(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
+    let list = args.get(0).map( |l| get_wrapped_list(l) ).ok_or("list argument required")?.unwrap();
+    let index = args.get(1).map( |n| mal_number_value(n) ).ok_or("index argument required")?.unwrap();
+
+    if index < 0 || index >= list.len() as i32 {
+        Err(format!("index {} out of range for list of size {}", index, list.len()))
+    } else {
+        Ok(list[index as usize].clone())
+    }
+}
+
+fn is_nil(list: &MalData) -> bool {
+    if let &MalData::Nil = list {
+        true
+    } else {
+        false
+    }
+}
+
+fn mal_core_first(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
+    // first von nil -> nil
+    if args.get(0).map(|l| is_nil(l) ).unwrap_or(false) {
+        return Ok(MalData::Nil)
+    }
+
+    let list = args.get(0).map( |l| get_wrapped_list(l) ).ok_or("list argument required")?.unwrap();
+
+    if list.is_empty() {
+        Ok(MalData::Nil)
+    } else {
+        Ok(list.first().unwrap().clone())
+    }
+}
+
+fn mal_empty_list() -> MalData {
+    MalData::List(Rc::from(vec![]))
+}
+
+fn mal_core_rest(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
+    // rest(nil) -> ()
+    if args.get(0).map(|l| is_nil(l) ).unwrap_or(false) {
+        return Ok(mal_empty_list());
+    }
+
+    let list = args.get(0).map_or(None, |l| get_wrapped_list(l) ).ok_or("list argument required")?;
+
+    if list.is_empty() {
+        Ok(mal_empty_list())
+    } else {
+        let rest: Vec<MalData> = list.iter().skip(1).cloned().collect();
+        Ok(MalData::List(Rc::from(rest)))
+    }
+}
+
 // fn mal_core_(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
 // }
 
@@ -461,6 +526,10 @@ pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
 
     ns_map.insert("cons", Rc::new(mal_core_cons));
     ns_map.insert("concat", Rc::new(mal_core_concat));
+
+    ns_map.insert("nth", Rc::new(mal_core_nth));
+    ns_map.insert("first", Rc::new(mal_core_first));
+    ns_map.insert("rest", Rc::new(mal_core_rest));
 
     ns_map
 }

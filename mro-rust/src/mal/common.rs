@@ -140,6 +140,16 @@ pub fn is_mal_list(ast: &MalData) -> bool {
     if let &MalData::List(_) = ast { true } else { false }
 }
 
+pub fn get_wrapped_list(ast: &MalData) -> Option<&Vec<MalData>> {
+    match ast {
+        &MalData::List(ref list) | &MalData::Vector(ref list) =>
+            Some(list),
+
+        _ =>
+            None
+    }
+}
+
 pub fn mal_symbol_name(ast: &MalData) -> Option<String> {
     if let &MalData::Symbol(ref sym) = ast {
         Some(sym.to_string())
