@@ -13,7 +13,12 @@ use reader;
 use printer::pr_str;
 
 use common::{MalData, CallableFun, FunContext};
-use common::{mal_list_from_vec, get_wrapped_list};
+use common::{make_mal_list_from_vec, get_wrapped_list, make_mal_keyword, mal_bool_value, is_mal_keyword, is_mal_vector, is_mal_nil, is_mal_true, is_mal_false, make_mal_vec_from_slice, make_mal_map_from_kv_list, is_mal_map};
+use common::{MapKey, mapkey_for, make_mal_list_from_iter, is_list_like, are_lists_equal};
+
+use env::{Env, wrapped_env_type};
+
+type MalCoreFunResult = Result<MalData, String>;
 
 #[allow(unused_variables)]
 fn mal_core_add(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
@@ -151,44 +156,6 @@ fn mal_core_ge(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn is_list_like(value: &MalData) -> bool {
-    match *value {
-        MalData::List(_) |
-        MalData::Vector(_) =>
-            true,
-
-        _ =>
-            false
-    }
-}
-
-fn are_lists_equal(l1: &MalData, l2: &MalData) -> Result<bool, String> {
-    if !is_list_like(l1) || !is_list_like(l2) {
-        return Err(format!("l1 und l2 muessen listenartig sein (l1: {:?}, l2: {:?})", l1, l2));
-    }
-
-    match ( l1, l2 ) {
-        ( &MalData::List(ref l1), &MalData::List(ref l2) )
-            | ( &MalData::List(ref l1), &MalData::Vector(ref l2) )
-            | ( &MalData::Vector(ref l1), &MalData::List(ref l2) )
-            | ( &MalData::Vector(ref l1), &MalData::Vector(ref l2) )
-            if l1.len() == l2.len() => {
-                let res = l1.iter().zip(l2.iter()).all( |( e1, e2 )| {
-                    if is_list_like(e1) && is_list_like(e2) {
-                        are_lists_equal(e1, e2).unwrap()
-                    } else {
-                        e1 == e2   
-                    }
-                });
-
-                Ok(res)
-            }
-
-        _ =>
-            Ok(false)
-    }
-}
-
 #[allow(unused_variables)]
 fn mal_core_equals(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     match ( args[0].clone(), args[1].clone() ) {
@@ -205,26 +172,30 @@ fn mal_core_equals(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String
             Ok(MalData::False),
 
         ( MalData::Keyword(kw1), MalData::Keyword(kw2) ) =>
-            Ok(if kw1 == kw2 { MalData::True } else { MalData::False }),
+            Ok(mal_bool_value(kw1 == kw2)),
 
         ( MalData::Symbol(sym1), MalData::Symbol(sym2) ) =>
-            Ok(if sym1 == sym2 { MalData::True } else { MalData::False }),
-
-        ( MalData::Keyword(_), _) =>
-            Ok(MalData::False),
+            Ok(mal_bool_value(sym1 == sym2)),
 
         ( MalData::Number(n1), MalData::Number(n2) ) =>
-            Ok(if n1 == n2 { MalData::True } else { MalData::False }),
+            Ok(mal_bool_value(n1 == n2)),
 
         ( MalData::Number(_), _) =>
             Ok(MalData::False),
 
         ( MalData::String(s1), MalData::String(s2) ) =>
-            Ok(if s1 == s2 { MalData::True } else { MalData::False }),
+            Ok(mal_bool_value(s1 == s2)),
 
-        ( ref l1, ref l2 )
-            if is_list_like(&l1) && is_list_like(&l2) => {
-            Ok(if are_lists_equal(&l1, &l2).unwrap() { MalData::True } else { MalData::False })
+        ( ref l1, ref l2 ) if is_list_like(&l1) && is_list_like(&l2) => {
+            let res = mal_bool_value(are_lists_equal(&l1, &l2)?);
+            debug!("equals, l1: {:?}, l2: {:?} -> {:?}", l1, l2, res);
+            Ok(res)
+        }
+
+        ( MalData::Map(m1), MalData::Map(m2) ) => {
+            let res = mal_bool_value(m1 == m2);
+            debug!("equals, m1: {:?}, m2: {:?} -> {:?}", m1, m2, res);
+            Ok(res)
         }
 
         ( l, r ) => {
@@ -391,7 +362,7 @@ fn mal_core_cons(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String>
             new_vec.push(head.clone());
             new_vec.extend_from_slice(&tail[..]);
 
-            Ok(mal_list_from_vec(new_vec))
+            Ok(make_mal_list_from_vec(new_vec))
         }
 
         _ =>
@@ -425,7 +396,7 @@ fn mal_core_concat(ctx: &FunContext, args: & [MalData]) -> Result<MalData, Strin
         }
     }
 
-    Ok(mal_list_from_vec(new_vec))
+    Ok(make_mal_list_from_vec(new_vec))
 }
 
 fn mal_number_value(mal_num: &MalData) -> Option<i32> {
@@ -447,17 +418,9 @@ fn mal_core_nth(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     }
 }
 
-fn is_nil(list: &MalData) -> bool {
-    if let &MalData::Nil = list {
-        true
-    } else {
-        false
-    }
-}
-
 fn mal_core_first(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // first von nil -> nil
-    if args.get(0).map(|l| is_nil(l) ).unwrap_or(false) {
+    if args.get(0).map(|l| is_mal_nil(l) ).unwrap_or(false) {
         return Ok(MalData::Nil)
     }
 
@@ -476,7 +439,7 @@ fn mal_empty_list() -> MalData {
 
 fn mal_core_rest(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     // rest(nil) -> ()
-    if args.get(0).map(|l| is_nil(l) ).unwrap_or(false) {
+    if args.get(0).map(|l| is_mal_nil(l) ).unwrap_or(false) {
         return Ok(mal_empty_list());
     }
 
@@ -490,7 +453,272 @@ fn mal_core_rest(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> 
     }
 }
 
-// fn mal_core_(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
+fn mal_core_throw(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    if args.len() != 1 {
+        Err("exception argument required".to_owned())
+    } else {
+        Ok(MalData::Exception(Box::from(args[0].clone())))
+    }
+}
+
+fn apply_fun(ctx: &FunContext, fun: &MalData, args: &[MalData]) -> MalCoreFunResult {
+    match fun {
+        &MalData::Function(ref fun) => {
+            let callable = fun.callable.clone();
+            let result = callable(ctx, args);
+
+            debug!("apply_fun, fun: {:?}, args: {:?}\n-> {:?}", fun, args, result);
+
+            result
+        }
+
+        &MalData::FnClosure(ref fnc) => {
+            let ref eval = ctx.eval2;  // FIXME eval in ctx
+
+            let outer_env = fnc.outer_env.clone();
+            let fn_env = Env::new(Some(outer_env), fnc.binds.as_slice(), args)?;
+
+            let res = eval(wrapped_env_type(fn_env), fnc.body.as_ref()).map_err( |e| e.to_string())?;
+
+            debug!("apply_fun, fnc: {:?}, args: {:?}\n-> {:?}", fnc, args, res);
+
+            Ok(res)
+        }
+
+        _ => {
+            Err(format!("cannot apply {:?}", fun))
+        }
+    }
+}
+
+fn mal_core_apply(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
+    if args.len() < 2 {
+        return Err("apply: function and argument vector required".to_owned());
+    }
+
+    let ref fun_arg = args[0];
+    let ref args_arg = args[args.len() - 1];
+    let args_arg_list = get_wrapped_list(args_arg).ok_or("apply: invalid argument vector")?;
+
+    let prepend_args = if args.len() > 2 { &args[1..args.len() - 1] } else { &[] };
+
+    debug!("apply, fun: {:?}, args: {:?}, prepend: {:?}", fun_arg, args_arg, prepend_args);
+
+    // TODO erstellung der parameterliste optimieren
+    let mut eff_args: Vec<MalData> = Vec::with_capacity(prepend_args.len() + args_arg_list.len());
+    eff_args.extend(prepend_args.iter().cloned());
+    eff_args.extend(args_arg_list.iter().cloned());
+
+    let res = apply_fun(ctx, fun_arg, eff_args.as_slice())?;
+
+    Ok(res)
+}
+
+fn mal_core_map(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
+    let fun_arg = args.get(0).ok_or("map: function argument required")?;
+    let seq_arg = args.get(1).ok_or("map: sequence argument required")?;
+
+    let seq = get_wrapped_list(seq_arg).ok_or("map: invalid sequence argument")?;
+
+    let mut mapped = Vec::with_capacity(seq.len());
+
+    for el in seq {
+        let map_res = apply_fun(ctx, fun_arg, vec![el.clone()].as_slice())?;
+
+        if let MalData::Exception(_) = map_res {
+            return Ok(map_res.clone())
+        } else {
+            mapped.push(map_res);
+        }
+    }
+
+    Ok(make_mal_list_from_vec(mapped))
+}
+
+fn mal_core_nil_p(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
+    args.get(0).map( |arg| mal_bool_value(is_mal_nil(arg)) ).ok_or("nil?: argument required".to_owned())
+}
+
+fn mal_core_true_p(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
+    args.get(0).map( |arg| mal_bool_value(is_mal_true(arg)) ).ok_or("true?: argument required".to_owned())
+}
+
+fn mal_core_false_p(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
+    args.get(0).map( |arg| mal_bool_value(is_mal_false(arg)) ).ok_or("false?: argument required".to_owned())
+}
+fn is_mal_symbol(value: &MalData) -> bool {
+    if let &MalData::Symbol(_) = value { true } else { false }
+}
+
+
+fn mal_core_symbol_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    args.get(0).map( |arg| mal_bool_value(is_mal_symbol(arg)) ).ok_or("symbol?: argument required".to_owned())
+}
+
+fn mal_string_as_string(value: &MalData) -> Option<String> {
+    if let &MalData::String(ref string) = value {
+        Some(string.clone())
+    } else {
+        None
+    }
+}
+
+fn make_mal_symbol(string: &str) -> MalData {
+    MalData::Symbol(string.to_string())
+}
+
+fn mal_core_symbol(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    let string = args.get(0).ok_or("symbol: argument required".to_owned())?;
+    mal_string_as_string(string).map( |s| make_mal_symbol(&s)).ok_or("symbol: name must be string".to_owned())
+}
+
+fn mal_core_keyword(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    let string = args.get(0).ok_or("keyword: argument required".to_owned())?;
+    mal_string_as_string(string).map( |s| make_mal_keyword(&s)).ok_or("keyword: name must be string".to_owned())
+}
+
+fn mal_core_keyword_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    args.get(0).map( |arg| mal_bool_value(is_mal_keyword(arg)) ).ok_or("keyword?: argument required".to_owned())
+}
+
+fn mal_core_vector(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    Ok(make_mal_vec_from_slice(args))
+}
+
+fn mal_core_vector_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    args.get(0).map( |arg| mal_bool_value(is_mal_vector(arg)) ).ok_or("vector?: argument required".to_owned())
+}
+
+fn mal_core_hashmap(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    if args.len() % 2 != 0 {
+        return Err("hash-map: even number of arguments required".to_owned());
+    }
+
+    Ok(make_mal_map_from_kv_list(&mut args.iter())?)
+}
+
+fn mal_core_map_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    args.get(0).map( |arg| mal_bool_value(is_mal_map(arg)) ).ok_or("map?: argument required".to_owned())
+}
+
+fn mal_core_contains_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    if args.len() != 2 {
+        return Err("map and key arguments required".to_owned());
+    }
+
+    if let ( &MalData::Map(ref map), ref key ) = ( &args[0], &args[1] ) {
+        Ok(mal_bool_value(map.contains_key(&mapkey_for(&key)?)))
+    } else {
+        Err("invalid arguments".to_owned())
+    }
+}
+
+fn mal_core_sequential_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    args.get(0).map( |arg| mal_bool_value(is_list_like(arg)) ).ok_or("sequential?: argument required".to_owned())
+}
+
+fn mal_map_key_as_mal_value(key: &MapKey) -> MalData {
+    match key {
+        &MapKey::String(ref string) => 
+            MalData::String(string.clone()),
+
+        &MapKey::Symbol(ref symbol) => 
+            MalData::Symbol(symbol.clone()),
+
+        &MapKey::Keyword(ref kw) => 
+            MalData::Keyword(kw.clone()),
+
+        &MapKey::Number(number) => 
+            MalData::Number(number),
+
+        &MapKey::True => 
+            MalData::True,
+
+        &MapKey::False => 
+            MalData::False,
+
+        // _ =>
+        //     panic!("unhandled map key type: {:?}", key)
+    }
+}
+
+fn mal_core_keys(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
+    if let &MalData::Map(ref map) = &args[0] {
+        let keys = map.keys().map( |k| mal_map_key_as_mal_value(k) ).collect::<Vec<MalData>>();
+
+        Ok(make_mal_list_from_vec(keys))
+    } else {
+        Err("keys: map argument required".to_owned())
+    }
+}
+
+fn mal_core_vals(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
+    if let &MalData::Map(ref map) = &args[0] {
+        let iter: &mut Iterator<Item=&MalData> = &mut map.values();
+
+        Ok(make_mal_list_from_iter(iter))
+    } else {
+        Err("keys: map argument required".to_owned())
+    }
+}
+
+fn mal_core_assoc(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
+    if args.len() < 2 {
+        return Err("map and key/value arguments required".to_owned());
+    } else if args.len() % 2 != 1 {
+        return Err("key/value pairs required".to_owned());
+    }
+
+    if let &MalData::Map(ref map) = &args[0] {
+        let mut new_map = map.clone();
+
+        let kvs = &args[1..].to_vec();
+        let mut kv_iter = kvs.iter();
+
+        while let ( Some(key_arg), Some(value_arg) ) = ( kv_iter.next(), kv_iter.next() ) {
+            new_map.insert(mapkey_for(key_arg)?, value_arg.clone());
+        }
+
+        Ok(MalData::Map(new_map))
+    } else {
+        Err("invalid arguments".to_owned())
+    }
+    
+}
+
+fn mal_core_dissoc(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    if args.len() < 2 {
+        return Err("map and keys arguments required".to_owned());
+    }
+
+    if let &MalData::Map(ref map) = &args[0] {
+        let mut new_map = map.clone();
+
+        for key_arg in &args[1..] {
+            new_map.remove(&mapkey_for(key_arg)?);
+        }
+
+        Ok(MalData::Map(new_map))
+    } else {
+        Err("invalid arguments".to_owned())
+    }
+}
+
+fn mal_core_get(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    if args.len() != 2 {
+        return Err("map and key arguments required".to_owned());
+    }
+
+    if let &MalData::Nil = &args[0] {
+        Ok(MalData::Nil)
+    } else if let ( &MalData::Map(ref map), ref key ) = ( &args[0], &args[1] ) {
+        Ok(map.get(&mapkey_for(&key)?).map_or(MalData::Nil, |v| v.clone()))
+    } else {
+        Err("invalid arguments".to_owned())
+    }
+}
+
+// fn mal_core_(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
 // }
 
 pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
@@ -530,6 +758,28 @@ pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
     ns_map.insert("nth", Rc::new(mal_core_nth));
     ns_map.insert("first", Rc::new(mal_core_first));
     ns_map.insert("rest", Rc::new(mal_core_rest));
+
+    ns_map.insert("throw", Rc::new(mal_core_throw));
+    ns_map.insert("apply", Rc::new(mal_core_apply));
+    ns_map.insert("map", Rc::new(mal_core_map));
+    ns_map.insert("nil?", Rc::new(mal_core_nil_p));
+    ns_map.insert("true?", Rc::new(mal_core_true_p));
+    ns_map.insert("false?", Rc::new(mal_core_false_p));
+    ns_map.insert("symbol?", Rc::new(mal_core_symbol_p));
+    ns_map.insert("symbol", Rc::new(mal_core_symbol));
+    ns_map.insert("keyword", Rc::new(mal_core_keyword));
+    ns_map.insert("keyword?", Rc::new(mal_core_keyword_p));
+    ns_map.insert("vector", Rc::new(mal_core_vector));
+    ns_map.insert("vector?", Rc::new(mal_core_vector_p));
+    ns_map.insert("hash-map", Rc::new(mal_core_hashmap));
+    ns_map.insert("map?", Rc::new(mal_core_map_p));
+    ns_map.insert("assoc", Rc::new(mal_core_assoc));
+    ns_map.insert("dissoc", Rc::new(mal_core_dissoc));
+    ns_map.insert("get", Rc::new(mal_core_get));
+    ns_map.insert("contains?", Rc::new(mal_core_contains_p));
+    ns_map.insert("keys", Rc::new(mal_core_keys));
+    ns_map.insert("vals", Rc::new(mal_core_vals));
+    ns_map.insert("sequential?", Rc::new(mal_core_sequential_p));
 
     ns_map
 }
