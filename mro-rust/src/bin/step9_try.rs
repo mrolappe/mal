@@ -20,52 +20,28 @@ use std::path::Path;
 
 use mal::reader;
 use mal::printer;
-use mal::env::{EnvType, Env, Symbol};
+use mal::env::{EnvType, Env, Symbol, wrapped_env_type};
 
 use mal::common::MalData;
 use mal::common::MapKey;
 use mal::common::NativeFunction;
 use mal::common::{FnClosure, CallableFun, FunContext};
-use mal::common::{mal_list_from_vec, mal_str_symbol, mal_symbol_name, mal_list_from_slice, is_mal_list, get_wrapped_list};
+use mal::common::{make_mal_list_from_vec, make_mal_symbol, mal_symbol_name, make_mal_list_from_slice, is_mal_list, get_wrapped_list};
+
+use mal::printer::pr_str;
 
 use mal::core::init_ns_map;
-
-#[derive(Debug, Clone)]
-enum EvalError {
-    General(String)
-}
-
-impl From<&'static str> for EvalError {
-    fn from(err: &str) -> Self {
-        EvalError::General(err.to_string())
-    }
-}
-
-impl From<String> for EvalError {
-    fn from(err: String) -> Self {
-        EvalError::General(err)
-    }
-}
-
-impl<'e> fmt::Display for EvalError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            EvalError::General(ref err_msg) => {
-                write!(f, "eval error: {}", err_msg)
-            }
-        }
-    }
-}
+use mal::eval::{EvalError, MalEvalResult};
 
 fn read<'a>(input: &'a str) -> Result<MalData, String> {
     reader::read_str(input)
 }
 
-fn call_function(env: EnvType, f: & NativeFunction, args: & [MalData]) -> Result<MalData, EvalError> {
+fn call_function(env: EnvType, f: &NativeFunction, args: &[MalData]) -> Result<MalData, EvalError> {
     debug!("call_function, f: {:?}, args: {:?}", f, args);
 
     let callable = f.callable.clone();
-    let ctx = &FunContext { eval: Some(make_eval_closure(env)), env: None };
+    let ctx = &FunContext { eval: Some(make_eval_closure(env)), eval2: Box::from(eval), env: None };
     let result = callable(ctx, args);
 
     if log_enabled!(Trace) {
@@ -171,7 +147,7 @@ fn quasiquote(ast: &MalData) -> Result<MalData, EvalError> {
     debug!("> quasiquote, ast: {:?}", ast);
 
     if !is_pair(ast) {
-        let res = mal_list_from_vec(vec![mal_str_symbol("quote"), ast.clone()]);
+        let res = make_mal_list_from_vec(vec![make_mal_symbol("quote"), ast.clone()]);
         debug!("< quasiquote, !pair; res: {:?}", res);
         return Ok(res);
     } else if let Some(list) = get_wrapped_list(ast) {
@@ -188,7 +164,7 @@ fn quasiquote(ast: &MalData) -> Result<MalData, EvalError> {
             debug!("splice-unquote, to_unquote: {:?}", to_unquote);
 
             let quasiquote_rest = if list.len() > 1 {
-                quasiquote(&mal_list_from_slice(&list[1..]))?
+                quasiquote(&make_mal_list_from_slice(&list[1..]))?
             } else {
                 MalData::Nil
             };
@@ -196,9 +172,9 @@ fn quasiquote(ast: &MalData) -> Result<MalData, EvalError> {
             debug!("splice-unquote, quasiquote_rest: {:?}", quasiquote_rest);
 
             let res = if list.len() > 1 {
-                mal_list_from_vec(vec![mal_str_symbol("concat"), to_unquote.clone(), quasiquote_rest])
+                make_mal_list_from_vec(vec![make_mal_symbol("concat"), to_unquote.clone(), quasiquote_rest])
             } else {
-                mal_list_from_vec(vec![mal_str_symbol("concat"), to_unquote.clone()])
+                make_mal_list_from_vec(vec![make_mal_symbol("concat"), to_unquote.clone()])
             };
 
             debug!("< splice-unquote, res: {:?}", res);
@@ -208,10 +184,10 @@ fn quasiquote(ast: &MalData) -> Result<MalData, EvalError> {
             let quasiquote_first = quasiquote(&first)?;
             debug!("quasiquote, first: {:?}", quasiquote_first);
 
-            let quasiquote_rest = quasiquote(&mal_list_from_slice(&list[1..]))?;
+            let quasiquote_rest = quasiquote(&make_mal_list_from_slice(&list[1..]))?;
             debug!("quasiquote, rest: {:?}", quasiquote_rest);
 
-            let res = mal_list_from_vec(vec![mal_str_symbol("cons"), quasiquote_first, quasiquote_rest]);
+            let res = make_mal_list_from_vec(vec![make_mal_symbol("cons"), quasiquote_first, quasiquote_rest]);
             debug!("< quasiquote, res: {:?}", res);
 
             return Ok(res);
@@ -248,10 +224,6 @@ fn is_macro_call(env: EnvType, ast: &MalData) -> bool {
     debug!("is_macro_call, ast: {:?}, res: {:?}", ast, res);
 
     res
-}
-
-fn wrapped_env_type(env: Env) -> EnvType {
-    Rc::from(RefCell::from(env))
 }
 
 fn mal_closure_apply(env: EnvType, closure: &FnClosure, args: &[MalData]) -> Result<MalData, EvalError> {
@@ -299,10 +271,37 @@ fn macroexpand(env: EnvType, ast: &MalData) -> Result<MalData, EvalError> {
     Ok(expand_ast)
 }
 
-type MalEvalResult = Result<MalData, EvalError>;
-
 fn eval_try(env: EnvType, body_form: &MalData, catch_form: &MalData) -> MalEvalResult {
-    Ok(MalData::Nil)
+    let eval_res = match eval(env.clone(), body_form) {
+        Ok(res) =>
+            Ok(res),
+
+        Err(err) =>
+            Ok(MalData::Exception(Box::from(MalData::String(format!("{}", err)))))
+    };
+
+    debug!("eval_try, body_form: {:?},\ncatch_form: {:?}\n-> {:?}", body_form, catch_form, eval_res);
+
+    if let Ok(MalData::Exception(exc)) = eval_res {
+        if let &MalData::List(ref cfl) = catch_form {
+            match ( cfl.get(0), cfl.get(1), cfl.get(2) ) {
+                ( Some(catch_sym @ &MalData::Symbol(_)), Some(&MalData::Symbol(ref catch_bind)), Some(ref catch_body) ) if is_symbol_named(catch_sym, "catch*") => {
+                    let catch_env = wrapped_env_type(Env::new(Some(env.clone()), vec![catch_bind.clone()].as_slice(), &vec![*exc])?);
+
+                    debug!("eval_try, catch_bodu: {:?}", catch_body);
+                    eval(catch_env, &catch_body)
+                }
+
+                _ => {
+                    Err(EvalError::from("invalid catch* form"))
+                }
+            }
+        } else {
+            Err(EvalError::from("catch* form expected"))
+        }
+    } else {
+        eval_res
+    }
 }
 
 fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {

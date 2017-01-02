@@ -104,3 +104,8 @@ impl Env {
         val
     }
 }
+
+pub fn wrapped_env_type(env: Env) -> EnvType {
+    Rc::from(RefCell::from(env))
+}
+

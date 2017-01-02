@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use regex::Regex;
 use std::rc::Rc;
 
-use common::{MalData, MapKey, mal_list_from_vec, mal_str_symbol};
+use common::{MalData, make_mal_list_from_vec, make_mal_symbol, make_mal_keyword, make_mal_map_from_kv_list};
 
 struct Reader<'r> {
     tokens: Vec<&'r str>,
@@ -100,7 +99,7 @@ fn read_form(reader: &mut Reader) -> Result<MalData, String> {
         Some("@") => {
             reader.next();
             let next_form = read_form(reader)?;
-            let list = vec!(mal_str_symbol("deref"), next_form);
+            let list = vec!(make_mal_symbol("deref"), next_form);
 
             Ok(MalData::List(Rc::from(list)))
         }
@@ -108,25 +107,25 @@ fn read_form(reader: &mut Reader) -> Result<MalData, String> {
         // quote
         Some("'") => {
             reader.next();
-            Ok(mal_list_from_vec(vec![ mal_str_symbol("quote"), read_form(reader)? ]))
+            Ok(make_mal_list_from_vec(vec![ make_mal_symbol("quote"), read_form(reader)? ]))
         }
 
         // quasiquote
         Some("`") => {
             reader.next();
-            Ok(mal_list_from_vec(vec![ mal_str_symbol("quasiquote"), read_form(reader)? ]))
+            Ok(make_mal_list_from_vec(vec![ make_mal_symbol("quasiquote"), read_form(reader)? ]))
         }
 
         // unquote
         Some("~") => {
             reader.next();
-            Ok(mal_list_from_vec(vec![ mal_str_symbol("unquote"), read_form(reader)? ]))
+            Ok(make_mal_list_from_vec(vec![ make_mal_symbol("unquote"), read_form(reader)? ]))
         }
 
         // splice-unquote
         Some("~@") => {
             reader.next();
-            Ok(mal_list_from_vec(vec![ mal_str_symbol("splice-unquote"), read_form(reader)? ]))
+            Ok(make_mal_list_from_vec(vec![ make_mal_symbol("splice-unquote"), read_form(reader)? ]))
         }
 
         // sonst read_atom mit reader aufrufen
@@ -174,7 +173,8 @@ fn read_list(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderError> {
 
             (Some("}"), "}") => {
                 reader.next();
-                let list = MalData::Map(hashmap_from_kv_list(items).unwrap());
+                // let list = MalData::Map(make_hashmap_from_kv_list(&mut items.iter()).unwrap());
+                let list = make_mal_map_from_kv_list(&mut items.iter())?;
                 debug!("< read_list, delim: {}, list: {:?}", delim, list);
                 return Ok(list);
             }
@@ -193,54 +193,7 @@ fn read_list(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderError> {
     }
 }
 
-fn mapkey_for(atom: &MalData) -> Result<MapKey, ReaderError> {
-    match *atom {
-        MalData::True =>
-            Ok(MapKey::True),
 
-        MalData::False =>
-            Ok(MapKey::False),
-
-        MalData::String(ref string) =>
-            Ok(MapKey::String(string.clone())),
-
-        MalData::Symbol(ref string) =>
-            Ok(MapKey::Symbol(string.to_string())),
-
-        MalData::Keyword(ref string) =>
-            Ok(MapKey::Keyword(string.clone())),
-
-        MalData::Number(num) =>
-            Ok(MapKey::Number(num)),
-
-        _ =>
-            Err(format!("mapkey_for, unhandled: {:?}", atom))
-    }
-}
-
-
-fn hashmap_from_kv_list(kvs: Vec<MalData>) -> Result<HashMap<MapKey, MalData>, ReaderError> {
-    let mut map: HashMap<MapKey, MalData> = HashMap::new();
-    let mut iter = kvs.iter();
-
-    loop {
-        let (k, v) = ( iter.next(), iter.next() );
-
-        match (k, v) {
-            (None, None) => break,
-
-            (Some(k), None) => return Err(format!("value missing for map entry (key: {:?})", k)),
-
-            (Some(k), Some(v)) => { map.insert(try!(mapkey_for(k)), v.clone()); }
-
-            _ => break,
-        }
-
-        debug!("TODO hashmap_from_kv_list, kvs: {:?}, k: {:?}, v: {:?}", kvs, k, v);
-    }
-
-    Ok(map)
-}
 fn read_atom(reader: &mut Reader) -> Option<MalData> {
     let atom = reader.next();
 
@@ -276,11 +229,12 @@ fn read_atom(reader: &mut Reader) -> Option<MalData> {
         }
 
         Some(kw) if kw.starts_with(":") => {
-            Some(MalData::Keyword('\u{29e}'.to_string() + kw))
+            let name = kw.chars().skip(1).collect::<String>();
+            Some(make_mal_keyword(name.as_str()))
         }
 
         Some(other) =>
-            Some(mal_str_symbol(other.clone())),
+            Some(make_mal_symbol(other.clone())),
 
         None => None
     };

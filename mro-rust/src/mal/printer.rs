@@ -19,7 +19,7 @@ impl PrStr for MapKey {
             MapKey::False => "false".to_owned(),
             MapKey::String(ref string) => make_readable_string(string),
             MapKey::Symbol(ref sym) => sym.clone(),
-            MapKey::Keyword(ref kw) => kw.chars().skip(1).collect(),
+            MapKey::Keyword(ref kw) => ":".chars().chain(kw.chars().skip(1)).collect(),
             MapKey::Number(ref num) => num.to_string(),
         }
     }
@@ -35,7 +35,7 @@ impl<'d> PrStr for MalData {
             MalData::False => "false".to_owned(),
             MalData::String(ref string) => if print_readably { make_readable_string(string) } else { string.clone() },
             MalData::Symbol(ref sym) => sym.clone(),  // TODO symbolname
-            MalData::Keyword(ref kw) => kw.chars().skip(1).collect(),
+            MalData::Keyword(ref kw) => ":".chars().chain(kw.chars().skip(1)).collect(),
             MalData::Number(ref num) => num.to_string(),  // TODO zahl
 
             MalData::List(ref elements) => {
@@ -74,6 +74,9 @@ impl<'d> PrStr for MalData {
             }
 
             MalData::Function(_) | MalData::FnClosure(_) => "#<function>".to_string(),
+
+            MalData::Exception(_) =>
+                "#<exception>".to_string()
         }
     }
 }

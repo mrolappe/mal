@@ -11,4 +11,5 @@ pub mod reader;
 pub mod printer;
 pub mod env;
 pub mod core;
+pub mod eval;
 
