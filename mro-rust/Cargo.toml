@@ -39,9 +39,13 @@ path = "src/mal/lib.rs"
 # name = "step7_quote"
 # path = "src/bin/step7_quote.rs"
 
+# [[bin]]
+# name = "step8_macros"
+# path = "src/bin/step8_macros.rs"
+
 [[bin]]
-name = "step8_macros"
-path = "src/bin/step8_macros.rs"
+name = "step9_try"
+path = "src/bin/step9_try.rs"
 
 [dependencies]
 regex = "0.1.80"
