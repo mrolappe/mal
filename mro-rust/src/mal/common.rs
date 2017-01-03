@@ -31,12 +31,15 @@ pub enum MapKey {
     Number(i32),
 }
 
+type MalDataMetaType = Box<MalData>;
+
 #[derive(Clone)]
 pub struct FnClosure {
     pub outer_env: EnvType,
     pub binds: Vec<Symbol>,
     pub body: Box<MalData>,
-    pub is_macro: bool
+    pub is_macro: bool,
+    meta: Option<MalDataMetaType>
 }
 
 impl fmt::Debug for FnClosure {
@@ -48,18 +51,29 @@ impl fmt::Debug for FnClosure {
 
 impl FnClosure {
     pub fn new(outer_env: EnvType, binds: &Vec<Symbol>, body: &MalData) -> FnClosure {
-        FnClosure { outer_env: outer_env, binds: binds.clone(), body: Box::new(body.clone()), is_macro: false }
+        FnClosure { outer_env: outer_env, binds: binds.clone(), body: Box::new(body.clone()), is_macro: false, meta: None }
     }
 
     pub fn to_macro(&self) -> FnClosure {
-        FnClosure { outer_env: self.outer_env.clone(), binds: self.binds.clone(), body: Box::new((*self.body).clone()), is_macro: true }
+        FnClosure { outer_env: self.outer_env.clone(), binds: self.binds.clone(), body: Box::new((*self.body).clone()),
+                    is_macro: true, meta: self.meta.clone() }
+    }
+
+    pub fn with_meta(&self, meta: &MalData) -> FnClosure {
+        FnClosure { outer_env: self.outer_env.clone(), binds: self.binds.clone(), body: self.body.clone(), is_macro: false,
+                    meta: Some(Box::from(meta.clone())) }
     }
 
     pub fn is_macro(&self) -> bool {
         self.is_macro
     }
+
+    pub fn get_meta(&self) -> Option<MalDataMetaType> {
+        self.meta.clone()
+    }
 }
 
+type MalMapType = HashMap<MapKey, MalData>;
 
 // #[derive(Debug, Clone, PartialEq)]
 #[derive(Debug, Clone)]
@@ -72,13 +86,13 @@ pub enum MalData {
     Symbol(String),
     Keyword(String),
     Number(i32),
-    List(Rc<Vec<MalData>>),
-    Vector(Rc<Vec<MalData>>),
-    Map(HashMap<MapKey, MalData>),
+    List(Rc<Vec<MalData>>, Option<MalDataMetaType>),
+    Vector(Rc<Vec<MalData>>, Option<MalDataMetaType>),
+    Map(MalMapType, Option<MalDataMetaType>),
     Atom(Rc<RefCell<MalData>>),
     Function(NativeFunction),
     FnClosure(FnClosure),
-    Exception(Box<MalData>)
+    Exception(Box<MalData>),
 }
 
 impl PartialEq for MalData {
@@ -120,7 +134,7 @@ impl PartialEq for MalData {
                 res
             }
 
-            ( &MalData::Map(ref m1), &MalData::Map(ref m2) ) => {
+            ( &MalData::Map(ref m1, _), &MalData::Map(ref m2, _) ) => {
                 let res = m1 == m2;
                 debug!("eq, m1: {:?}, m2: {:?} -> {:?}", m1, m2, res);
                 res
@@ -155,20 +169,21 @@ impl PartialEq for FnClosure {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum NativeFunctionSelector {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Callable,
-}
+// #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+// pub enum NativeFunctionSelector {
+//     Add,
+//     Sub,
+//     Mul,
+//     Div,
+//     Callable,
+// }
 
 
 #[derive(Clone)]
 pub struct NativeFunction {
     name: String,
-    pub callable: Rc<CallableFun>
+    pub callable: Rc<CallableFun>,
+    meta: Option<MalDataMetaType>
 }
 
 impl fmt::Debug for NativeFunction {
@@ -183,15 +198,24 @@ impl NativeFunction {
     pub fn new(name: &str, callable: Rc<CallableFun>) -> NativeFunction {
         NativeFunction {
             name: name.to_owned(),
-            callable: callable
+            callable: callable,
+            meta: None
         }
+    }
+
+    pub fn with_meta(&self, meta: &MalData) -> NativeFunction {
+        NativeFunction { name: self.name.clone(), callable: self.callable.clone(), meta: Some(Box::from(meta.clone())) }
+    }
+
+    pub fn get_meta(&self) -> Option<MalDataMetaType> {
+        self.meta.clone()
     }
 }
 
 pub fn is_list_like(value: &MalData) -> bool {
     match *value {
-        MalData::List(_) |
-        MalData::Vector(_) =>
+        MalData::List(_, _) |
+        MalData::Vector(_, _) =>
             true,
 
         _ =>
@@ -205,10 +229,10 @@ pub fn are_lists_equal(l1: &MalData, l2: &MalData) -> Result<bool, String> {
     }
 
     match ( l1, l2 ) {
-        ( &MalData::List(ref l1), &MalData::List(ref l2) )
-            | ( &MalData::List(ref l1), &MalData::Vector(ref l2) )
-            | ( &MalData::Vector(ref l1), &MalData::List(ref l2) )
-            | ( &MalData::Vector(ref l1), &MalData::Vector(ref l2) )
+        ( &MalData::List(ref l1, _), &MalData::List(ref l2, _) )
+            | ( &MalData::List(ref l1, _), &MalData::Vector(ref l2, _) )
+            | ( &MalData::Vector(ref l1, _), &MalData::List(ref l2, _) )
+            | ( &MalData::Vector(ref l1, _), &MalData::Vector(ref l2, _) )
             if l1.len() == l2.len() => {
                 let res = l1.iter().zip(l2.iter()).all( |( e1, e2 )| {
                     if is_list_like(e1) && is_list_like(e2) {
@@ -227,6 +251,14 @@ pub fn are_lists_equal(l1: &MalData, l2: &MalData) -> Result<bool, String> {
 }
 
 
+pub fn make_mal_string(string: &str) -> MalData {
+    MalData::String(string.to_owned())
+}
+
+pub fn is_mal_string(ast: &MalData) -> bool {
+    if let &MalData::String(_) = ast { true } else { false }
+}
+
 pub fn make_mal_symbol(sym: &str) -> MalData {
     MalData::Symbol(sym.to_string())
 }
@@ -235,19 +267,32 @@ pub fn make_mal_list_from_iter(iter: &mut Iterator<Item=&MalData>) -> MalData {
     let mut vec = Vec::new();
     vec.extend(iter.cloned());
 
-    MalData::List(Rc::from(vec))
+    MalData::List(Rc::from(vec), None)
 }
 
+// FIXME vec: referenz statt kopie
 pub fn make_mal_list_from_vec(vec: Vec<MalData>) -> MalData {
-    MalData::List(Rc::from(vec))
+    MalData::List(Rc::from(vec), None)
+}
+
+pub fn make_mal_list_from_vec_with_meta(vec: &Vec<MalData>, meta: &MalData) -> MalData {
+    MalData::List(Rc::from(vec.clone()), Some(Box::from(meta.clone())))
 }
 
 pub fn make_mal_list_from_slice(slice: &[MalData]) -> MalData {
-    MalData::List(Rc::from(slice.to_vec()))
+    MalData::List(Rc::from(slice.to_vec()), None)
 }
 
-pub fn make_mal_vec_from_slice(slice: &[MalData]) -> MalData {
-    MalData::Vector(Rc::from(slice.to_vec()))
+pub fn make_mal_vector_from_slice(slice: &[MalData]) -> MalData {
+    MalData::Vector(Rc::from(slice.to_vec()), None)
+}
+
+pub fn make_mal_vector_from_vec_with_meta(vec: &Vec<MalData>, meta: &MalData) -> MalData {
+    MalData::Vector(Rc::from(vec.clone()), Some(Box::from(meta.clone())))
+}
+
+pub fn make_mal_vector_from_vec(vec: &Vec<MalData>) -> MalData {
+    MalData::Vector(Rc::from(vec.clone()), None)
 }
 
 pub fn is_mal_symbol(ast: &MalData) -> bool {
@@ -255,12 +300,12 @@ pub fn is_mal_symbol(ast: &MalData) -> bool {
 }
 
 pub fn is_mal_list(ast: &MalData) -> bool {
-    if let &MalData::List(_) = ast { true } else { false }
+    if let &MalData::List(_, _) = ast { true } else { false }
 }
 
 pub fn get_wrapped_list(ast: &MalData) -> Option<&Vec<MalData>> {
     match ast {
-        &MalData::List(ref list) | &MalData::Vector(ref list) =>
+        &MalData::List(ref list, _) | &MalData::Vector(ref list, _) =>
             Some(list),
 
         _ =>
@@ -285,7 +330,7 @@ pub fn is_mal_keyword(value: &MalData) -> bool {
 }
 
 pub fn is_mal_vector(value: &MalData) -> bool {
-    if let &MalData::Vector(_) = value { true } else { false }
+    if let &MalData::Vector(_, _) = value { true } else { false }
 }
 
 pub fn mal_bool_value(value: bool) -> MalData {
@@ -305,7 +350,7 @@ pub fn is_mal_false(value: &MalData) -> bool {
 }
 
 pub fn is_mal_map(value: &MalData) -> bool {
-    if let &MalData::Map(_) = value { true } else { false }
+    if let &MalData::Map(_, _) = value { true } else { false }
 }
 
 pub fn mapkey_for(value: &MalData) -> Result<MapKey, String> {
@@ -357,5 +402,9 @@ pub fn make_hashmap_from_kv_list(iter: &mut Iterator<Item=&MalData>) -> Result<H
 }
 
 pub fn make_mal_map_from_kv_list(iter: &mut Iterator<Item=&MalData>) -> Result<MalData, String> {
-    Ok(MalData::Map(make_hashmap_from_kv_list(iter)?))
+    Ok(MalData::Map(make_hashmap_from_kv_list(iter)?, None))
+}
+
+pub fn make_mal_map_from_map_with_meta(map: &MalMapType, meta: &MalData) -> Result<MalData, String> {
+    Ok(MalData::Map(map.clone(), Some(Box::from(meta.clone()))))
 }

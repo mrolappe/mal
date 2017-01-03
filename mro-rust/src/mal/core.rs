@@ -3,9 +3,13 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use std::fs::File;
-use std::io::Read;
+use std::io;
+use std::io::{Read, Write};
 use std::convert::From;
 use std::string::String;
+
+use std::time;
+use std::time::SystemTime;
 
 use itertools;
 
@@ -13,8 +17,9 @@ use reader;
 use printer::pr_str;
 
 use common::{MalData, CallableFun, FunContext};
-use common::{make_mal_list_from_vec, get_wrapped_list, make_mal_keyword, mal_bool_value, is_mal_keyword, is_mal_vector, is_mal_nil, is_mal_true, is_mal_false, make_mal_vec_from_slice, make_mal_map_from_kv_list, is_mal_map};
-use common::{MapKey, mapkey_for, make_mal_list_from_iter, is_list_like, are_lists_equal};
+use common::{make_mal_list_from_vec, get_wrapped_list, make_mal_keyword, mal_bool_value, is_mal_keyword, is_mal_vector, is_mal_nil, is_mal_true, is_mal_false, make_mal_vector_from_slice, make_mal_map_from_kv_list, is_mal_map, make_mal_list_from_vec_with_meta};
+use common::{MapKey, mapkey_for, make_mal_list_from_iter, is_list_like, are_lists_equal, is_mal_string, make_mal_string};
+use common::{make_mal_vector_from_vec_with_meta, make_mal_map_from_map_with_meta};
 
 use env::{Env, wrapped_env_type};
 
@@ -22,31 +27,51 @@ type MalCoreFunResult = Result<MalData, String>;
 
 #[allow(unused_variables)]
 fn mal_core_add(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
-    let res = number_arg(&args[0]) + number_arg(&args[1]);  // TODO fehlerbehandlung
-    Ok(MalData::Number(res))
+    match ( args.get(0).map_or(None, |arg| number_arg(arg)), args.get(1).map_or(None, |arg| number_arg(arg)) ) {
+        ( Some(num1), Some(num2) ) =>
+            Ok(MalData::Number(num1 + num2)),
+
+        _ =>
+            Err("add: two number arguments required".to_string())
+    }
 }
 
 #[allow(unused_variables)]
 fn mal_core_sub(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
-    let res = number_arg(&args[0]) - number_arg(&args[1]);  // TODO fehlerbehandlung
-    Ok(MalData::Number(res))
+    match ( args.get(0).map_or(None, |arg| number_arg(arg)), args.get(1).map_or(None, |arg| number_arg(arg)) ) {
+        ( Some(num1), Some(num2) ) =>
+            Ok(MalData::Number(num1 - num2)),
+
+        _ =>
+            Err("sub: two number arguments required".to_string())
+    }
 }
 
 #[allow(unused_variables)]
 fn mal_core_mul(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
-    let res = number_arg(&args[0]) * number_arg(&args[1]);  // TODO fehlerbehandlung
-    Ok(MalData::Number(res))
+    match ( args.get(0).map_or(None, |arg| number_arg(arg)), args.get(1).map_or(None, |arg| number_arg(arg)) ) {
+        ( Some(num1), Some(num2) ) =>
+            Ok(MalData::Number(num1 * num2)),
+
+        _ =>
+            Err("mul: two number arguments required".to_string())
+    }
 }
 
 #[allow(unused_variables)]
 fn mal_core_div(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
-    let res = number_arg(&args[0]).checked_div(number_arg(&args[1])).unwrap();  // TODO fehlerbehandlung
-    Ok(MalData::Number(res))
+    match ( args.get(0).map_or(None, |arg| number_arg(arg)), args.get(1).map_or(None, |arg| number_arg(arg)) ) {
+        ( Some(num1), Some(num2) ) =>
+            Ok(MalData::Number(num1.checked_div(num2).ok_or("division failed")?)),
+
+        _ =>
+            Err("div: two number arguments required".to_string())
+    }
 }
 
 #[allow(unused_variables)]
 fn mal_core_list(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
-    Ok(MalData::List(Rc::from(args.to_vec())))
+    Ok(make_mal_list_from_vec(args.to_vec()))
 }
 
 #[allow(unused_variables)]
@@ -55,7 +80,7 @@ fn mal_core_list_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String
         Err("argument required".to_owned())
     } else {
         match args[0] {
-            MalData::List(_) | MalData::Nil =>
+            MalData::List(_, _) | MalData::Nil =>
                 Ok(MalData::True),
 
             _ =>
@@ -70,7 +95,7 @@ fn mal_core_empty_p(ctx: &FunContext, args: &[MalData]) -> Result<MalData, Strin
         Err("argument required".to_owned())
     } else {
         match args[0] {
-            MalData::List(ref l) | MalData::Vector(ref l) =>
+            MalData::List(ref l, _) | MalData::Vector(ref l, _) =>
                 Ok(if l.is_empty() { MalData::True } else { MalData::False }),
 
             MalData::Nil =>
@@ -91,7 +116,7 @@ fn mal_core_count(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String>
             MalData::Nil =>
                 Ok(MalData::Number(0)),
 
-            MalData::List(ref l) | MalData::Vector(ref l) =>
+            MalData::List(ref l, _) | MalData::Vector(ref l, _) =>
                 Ok(MalData::Number(l.len() as i32)),
 
             _ =>
@@ -192,7 +217,7 @@ fn mal_core_equals(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String
             Ok(res)
         }
 
-        ( MalData::Map(m1), MalData::Map(m2) ) => {
+        ( MalData::Map(m1, _), MalData::Map(m2, _) ) => {
             let res = mal_bool_value(m1 == m2);
             debug!("equals, m1: {:?}, m2: {:?} -> {:?}", m1, m2, res);
             Ok(res)
@@ -319,32 +344,35 @@ fn mal_core_swap(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> 
 
         debug!("swap!, atom: {:?}, fn: {:?}", atom, atom_fn);
 
-        match atom_fn {
-            &MalData::FnClosure(_) | &MalData::Function(_) => {
-                let mut list = vec!(atom_fn.clone(), old_value.clone());
+        // match atom_fn {
+        //     &MalData::FnClosure(_) | &MalData::Function(_) => {
+                // let mut list = vec!(atom_fn.clone(), old_value.clone());
 
+        let mut list = vec!(old_value.clone());
                 // zusaetzliche parameter uebergeben
                 if args.len() > 2 {
                     list.extend_from_slice(&args[2..]);
                 }
 
-                let new_value_form = MalData::List(Rc::from(list));
+        let new_value = apply_fun(ctx, &atom_fn, &list)?;
+        //         let new_value_form = make_mal_list_from_vec(list);
+        //         debug!("swap!, new_value_form: {:?}", new_value_form);
 
-                if let Some(ref eval) = ctx.eval.as_ref() {
-                    let new_value = eval(ctx, &[new_value_form])?;
+        //         if let Some(ref eval) = ctx.eval.as_ref() {
+        //             let new_value = eval(ctx, &[new_value_form])?;
                     debug!("swap!, atom_fn({:?}) -> {:?}", old_value.clone(), new_value);
 
                     *atom.borrow_mut() = new_value.clone();
 
                     Ok(new_value)
-                } else {
-                    return Err("evaluator function not set in context".to_owned())
-                }
-            }
+        //         } else {
+        //             return Err("evaluator function not set in context".to_owned())
+        //         }
+        //     }
 
-            _ => 
-                return Err("atom value update function expected".to_owned())
-        }
+        //     _ => 
+        //         return Err("atom value update function expected".to_owned())
+        // }
 
     } else {
         Err("atom expected".to_owned())
@@ -354,8 +382,8 @@ fn mal_core_swap(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> 
 #[allow(unused_variables)]
 fn mal_core_cons(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String> {
     match ( args.get(0), args.get(1) ) {
-        ( Some(head), Some(&MalData::List(ref tail)) ) |
-        ( Some(head), Some(&MalData::Vector(ref tail)) ) => {
+        ( Some(head), Some(&MalData::List(ref tail, _)) ) |
+        ( Some(head), Some(&MalData::Vector(ref tail, _)) ) => {
             let new_len = 1 + tail.len();
             let mut new_vec: Vec<MalData> = Vec::with_capacity(new_len);
 
@@ -371,9 +399,9 @@ fn mal_core_cons(ctx: &FunContext, args: & [MalData]) -> Result<MalData, String>
 }
 
 fn is_mal_list_or_vector(ast: &MalData) -> bool {
-    if let &MalData::List(_) = ast {
+    if let &MalData::List(_, _) = ast {
         true
-    } else if let &MalData::Vector(_) = ast {
+    } else if let &MalData::Vector(_, _) = ast {
         true
     } else {
         false
@@ -389,9 +417,9 @@ fn mal_core_concat(ctx: &FunContext, args: & [MalData]) -> Result<MalData, Strin
     let mut new_vec = Vec::new();
 
     for arg in args {
-        if let &MalData::List(ref list) = arg {
+        if let &MalData::List(ref list, _) = arg {
             new_vec.extend_from_slice(&list[..]);
-        } else if let &MalData::Vector(ref list) = arg {
+        } else if let &MalData::Vector(ref list, _) = arg {
             new_vec.extend_from_slice(&list[..]);
         }
     }
@@ -434,7 +462,7 @@ fn mal_core_first(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String>
 }
 
 fn mal_empty_list() -> MalData {
-    MalData::List(Rc::from(vec![]))
+    make_mal_list_from_vec(vec![])
 }
 
 fn mal_core_rest(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
@@ -449,7 +477,7 @@ fn mal_core_rest(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> 
         Ok(mal_empty_list())
     } else {
         let rest: Vec<MalData> = list.iter().skip(1).cloned().collect();
-        Ok(MalData::List(Rc::from(rest)))
+        Ok(make_mal_list_from_vec(rest))
     }
 }
 
@@ -582,7 +610,7 @@ fn mal_core_keyword_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
 }
 
 fn mal_core_vector(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
-    Ok(make_mal_vec_from_slice(args))
+    Ok(make_mal_vector_from_slice(args))
 }
 
 fn mal_core_vector_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
@@ -606,7 +634,7 @@ fn mal_core_contains_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult 
         return Err("map and key arguments required".to_owned());
     }
 
-    if let ( &MalData::Map(ref map), ref key ) = ( &args[0], &args[1] ) {
+    if let ( &MalData::Map(ref map, _), ref key ) = ( &args[0], &args[1] ) {
         Ok(mal_bool_value(map.contains_key(&mapkey_for(&key)?)))
     } else {
         Err("invalid arguments".to_owned())
@@ -643,7 +671,7 @@ fn mal_map_key_as_mal_value(key: &MapKey) -> MalData {
 }
 
 fn mal_core_keys(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
-    if let &MalData::Map(ref map) = &args[0] {
+    if let &MalData::Map(ref map, _) = &args[0] {
         let keys = map.keys().map( |k| mal_map_key_as_mal_value(k) ).collect::<Vec<MalData>>();
 
         Ok(make_mal_list_from_vec(keys))
@@ -653,7 +681,7 @@ fn mal_core_keys(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
 }
 
 fn mal_core_vals(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
-    if let &MalData::Map(ref map) = &args[0] {
+    if let &MalData::Map(ref map, _) = &args[0] {
         let iter: &mut Iterator<Item=&MalData> = &mut map.values();
 
         Ok(make_mal_list_from_iter(iter))
@@ -669,7 +697,7 @@ fn mal_core_assoc(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
         return Err("key/value pairs required".to_owned());
     }
 
-    if let &MalData::Map(ref map) = &args[0] {
+    if let &MalData::Map(ref map, ref meta) = &args[0] {
         let mut new_map = map.clone();
 
         let kvs = &args[1..].to_vec();
@@ -679,7 +707,7 @@ fn mal_core_assoc(ctx: &FunContext, args: &[MalData]) -> MalCoreFunResult {
             new_map.insert(mapkey_for(key_arg)?, value_arg.clone());
         }
 
-        Ok(MalData::Map(new_map))
+        Ok(MalData::Map(new_map, meta.clone()))
     } else {
         Err("invalid arguments".to_owned())
     }
@@ -691,14 +719,14 @@ fn mal_core_dissoc(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
         return Err("map and keys arguments required".to_owned());
     }
 
-    if let &MalData::Map(ref map) = &args[0] {
+    if let &MalData::Map(ref map, ref meta) = &args[0] {
         let mut new_map = map.clone();
 
         for key_arg in &args[1..] {
             new_map.remove(&mapkey_for(key_arg)?);
         }
 
-        Ok(MalData::Map(new_map))
+        Ok(MalData::Map(new_map, meta.clone()))
     } else {
         Err("invalid arguments".to_owned())
     }
@@ -711,10 +739,168 @@ fn mal_core_get(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
 
     if let &MalData::Nil = &args[0] {
         Ok(MalData::Nil)
-    } else if let ( &MalData::Map(ref map), ref key ) = ( &args[0], &args[1] ) {
+    } else if let ( &MalData::Map(ref map, _), ref key ) = ( &args[0], &args[1] ) {
         Ok(map.get(&mapkey_for(&key)?).map_or(MalData::Nil, |v| v.clone()))
     } else {
         Err("invalid arguments".to_owned())
+    }
+}
+
+fn mal_core_readline(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    let prompt = args.get(0).ok_or("prompt argument required")?;
+
+    print!("{}", mal_string_as_string(prompt).ok_or("prompt must be a string")?);
+    io::stdout().flush();
+
+    let mut line = String::new();
+
+    io::stdin().read_line(&mut line)
+        .map( |c| if c > 0 { MalData::String(line[0..c - 1].to_string()) } else { MalData::String("".to_string()) })
+        .map_err( |e| format!("{}", e))
+} 
+
+fn mal_core_string_p(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    args.get(0).ok_or("argument required".to_string()).map( |arg| mal_bool_value(is_mal_string(arg)) )
+}
+
+fn mal_core_seq(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    match args.get(0) {
+        Some(&MalData::List(ref lst, _)) | Some(&MalData::Vector(ref lst, _)) if lst.is_empty() =>
+            Ok(MalData::Nil),
+
+        Some(&MalData::List(ref lst, _)) | Some(&MalData::Vector(ref lst, _)) =>
+            Ok(make_mal_list_from_iter(&mut lst.iter())),
+
+        Some(&MalData::String(ref string)) if string.is_empty() =>
+            Ok(MalData::Nil),
+
+        Some(&MalData::String(ref string)) => {
+            let mut vec = string.chars().map( |c| make_mal_string(&c.to_string())).collect();
+
+            Ok(make_mal_list_from_vec(vec))
+        }
+
+        Some(&MalData::Nil) =>
+            Ok(MalData::Nil),
+
+        Some(arg) =>
+            Err(format!("seq: argument of illegal type: {:?}", arg)),
+
+        None =>
+            Err("seq: argument required".to_string())
+    }
+}
+
+fn mal_core_conj(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    if args.len() < 2 {
+        return Err("conj: seq arguments required".to_string());
+    }
+
+    match ( &args[0], &args[1..] ) {
+        ( &MalData::List(ref lst, _), xs) => {
+            let mut res = Vec::new();
+            res.extend_from_slice(lst);
+
+            for x in xs {
+                res.insert(0, x.clone());
+            }
+
+            Ok(make_mal_list_from_vec(res))
+        }
+
+        ( &MalData::Vector(ref vec, _), xs ) => {
+            let mut res = Vec::new();
+            res.extend_from_slice(vec);
+
+            for x in xs {
+                res.push(x.clone());
+            }
+
+            Ok(make_mal_vector_from_slice(&res))
+        }
+
+        ( seq, _ ) =>
+            Err(format!("illegal type for argument: {:?}", seq))
+    }
+}
+
+fn make_mal_number(number: i32) -> MalData {
+    MalData::Number(number)
+}
+
+fn mal_core_time_ms(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    let de = SystemTime::now().duration_since(time::UNIX_EPOCH);
+    debug!("time-ms, de: {:?}", de);
+    let msecs_since_epoch = SystemTime::now().duration_since(time::UNIX_EPOCH)
+        .map( |dur| dur.as_secs() * 1_000 + (dur.subsec_nanos() / 1_000_000) as u64)
+        .map_err( |err| format!("{}", err))?;
+
+    let res = make_mal_number(msecs_since_epoch as i32);
+    debug!("time-ms, res: {:?}", res);
+    Ok(res)  // FIXME datentyp fuer zahlen
+}
+
+fn mal_core_with_meta(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    if args.len() < 2 {
+        return Err("value and metadate arguments required".to_string());
+    }
+
+    let with_meta = match &args[0] {
+        &MalData::FnClosure(ref fnc) =>
+            MalData::FnClosure(fnc.with_meta(&args[1])),
+
+        &MalData::Function(ref fun) =>
+            MalData::Function(fun.with_meta(&args[1])),
+
+        &MalData::List(ref lst, _) => {
+            make_mal_list_from_vec_with_meta(lst, &args[1])
+        }
+
+        &MalData::Vector(ref lst, _) => {
+            make_mal_vector_from_vec_with_meta(lst, &args[1])
+        }
+
+        &MalData::Map(ref map, _) => {
+            make_mal_map_from_map_with_meta(map, &args[1])?
+        }
+
+        _ => {
+            warn!("with_meta, default; value: {:?}, metadata: {:?}", &args[0], &args[1]);
+            args[0].clone()
+        }
+    };
+
+    Ok(with_meta)
+}
+
+fn mal_core_meta(ctx: &FunContext, args: & [MalData]) -> MalCoreFunResult {
+    if args.len() != 1 {
+        return Err("value argument required".to_string());
+    }
+
+    match &args[0] {
+        &MalData::FnClosure(ref fnc) => {
+            Ok(fnc.get_meta().map_or(MalData::Nil, |m| *m.clone()))
+        }
+
+        &MalData::Function(ref fun ) => {
+            Ok(fun.get_meta().map_or(MalData::Nil, |m| *m.clone()))
+        }
+
+        &MalData::List(_, Some(ref meta) ) => {
+            Ok(*meta.clone())
+        }
+
+        &MalData::Vector(_, Some(ref meta) ) => {
+            Ok(*meta.clone())
+        }
+
+        &MalData::Map(_, Some(ref meta) ) => {
+            Ok(*meta.clone())
+        }
+
+        _ =>
+            Ok(MalData::Nil)
     }
 }
 

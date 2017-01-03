@@ -11,7 +11,6 @@ use log::LogLevel::Trace;
 use std::io::{self, Write};
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -22,13 +21,10 @@ use mal::reader;
 use mal::printer;
 use mal::env::{EnvType, Env, Symbol, wrapped_env_type};
 
-use mal::common::MalData;
-use mal::common::MapKey;
-use mal::common::NativeFunction;
+use mal::common::{MalData, MapKey, NativeFunction};
 use mal::common::{FnClosure, CallableFun, FunContext};
-use mal::common::{make_mal_list_from_vec, make_mal_symbol, mal_symbol_name, make_mal_list_from_slice, is_mal_list, get_wrapped_list};
-
-use mal::printer::pr_str;
+use mal::common::{make_mal_list_from_vec, make_mal_symbol, mal_symbol_name, make_mal_list_from_slice, is_mal_list, get_wrapped_list, make_mal_string};
+use mal::common::{make_mal_vector_from_vec};
 
 use mal::core::init_ns_map;
 use mal::eval::{EvalError, MalEvalResult};
@@ -61,7 +57,7 @@ fn eval_fn(env: EnvType, binds: & MalData, body: & MalData) -> Result<MalData, E
     debug!("eval_fn, binds: {:?}, body: {:?}", binds, body);
 
     match binds {
-        &MalData::Vector(ref b) | &MalData::List(ref b) => {
+        &MalData::Vector(ref b, _) | &MalData::List(ref b, _) => {
             let mut binds_vec = Vec::with_capacity(b.len());
 
             for bind in b.iter() {
@@ -127,7 +123,7 @@ fn eval_defmacro(env: EnvType, name: Option<&MalData>, value: Option<&MalData>) 
 
 fn is_pair(ast: &MalData) -> bool {
     match ast {
-        &MalData::List(ref list) | &MalData::Vector(ref list) =>
+        &MalData::List(ref list, _) | &MalData::Vector(ref list, _) =>
             !list.is_empty(),
 
         _ =>
@@ -198,7 +194,7 @@ fn quasiquote(ast: &MalData) -> Result<MalData, EvalError> {
 }
 
 fn mal_list_head(ast: &MalData) -> Option<&MalData> {
-    if let &MalData::List(ref list) = ast {
+    if let &MalData::List(ref list, _) = ast {
         list.first()
     } else {
         None
@@ -283,7 +279,7 @@ fn eval_try(env: EnvType, body_form: &MalData, catch_form: &MalData) -> MalEvalR
     debug!("eval_try, body_form: {:?},\ncatch_form: {:?}\n-> {:?}", body_form, catch_form, eval_res);
 
     if let Ok(MalData::Exception(exc)) = eval_res {
-        if let &MalData::List(ref cfl) = catch_form {
+        if let &MalData::List(ref cfl, _) = catch_form {
             match ( cfl.get(0), cfl.get(1), cfl.get(2) ) {
                 ( Some(catch_sym @ &MalData::Symbol(_)), Some(&MalData::Symbol(ref catch_bind)), Some(ref catch_body) ) if is_symbol_named(catch_sym, "catch*") => {
                     let catch_env = wrapped_env_type(Env::new(Some(env.clone()), vec![catch_bind.clone()].as_slice(), &vec![*exc])?);
@@ -322,10 +318,10 @@ fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
         }
 
         match tco_ast.clone() {
-            MalData::List(ref list) if list.is_empty() =>
+            MalData::List(ref list, _) if list.is_empty() =>
                 return Ok(tco_ast.clone()),
 
-            MalData::List(ref list) => {
+            MalData::List(ref list, _) => {
                 // sonderformen/special forms
                 if let Some(& MalData::Symbol(ref sym)) = list.first() {
                     match sym.as_str() {
@@ -348,7 +344,7 @@ fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
                             let_body = list.get(2).unwrap();
 
                             let let_bindings = match list.get(1) {
-                                Some(&MalData::List(ref bindings)) | Some(&MalData::Vector(ref bindings)) =>
+                                Some(&MalData::List(ref bindings, _)) | Some(&MalData::Vector(ref bindings, _)) =>
                                     bindings,
                                 _ =>
                                     return Err(EvalError::General("let* bindings".to_string())) // TODO
@@ -399,7 +395,7 @@ fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
                             let forms = &list[1..list.len() - 1];
                             trace!("eval_do, forms: {:?}", forms);
 
-                            result = eval_ast(env.clone(), &MalData::List(Rc::from(forms.to_vec())));
+                            result = eval_ast(env.clone(), &make_mal_list_from_vec(forms.to_vec()));
 
                             tco_ast = list.last().unwrap().clone();  // TODO fehlerbehandlung
                             continue;
@@ -468,7 +464,7 @@ fn eval(mut env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
                 debug!("eval, eval_list: {:?}", eval_list);
 
                 match eval_list {
-                    Ok(MalData::List(ref l)) => {
+                    Ok(MalData::List(ref l, _)) => {
                         match l.first() {
                             Some(&MalData::Function(ref f)) => {
                                 debug!("(fun ...), f: {:?}", f);
@@ -524,7 +520,7 @@ fn eval_ast(env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
     trace!("eval_ast");
 
     match ast {
-        & MalData::Vector(ref vec) => {
+        & MalData::Vector(ref vec, _) => {
             let mut eval_vec: Vec<MalData> = Vec::new();
 
             for el in vec.deref() {
@@ -539,10 +535,10 @@ fn eval_ast(env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
 
             debug!("eval_ast, eval_vec: {:?}", eval_vec);
 
-            Ok(MalData::Vector(Rc::new(eval_vec)))
+            Ok(make_mal_vector_from_vec(&eval_vec))
         }
 
-        & MalData::Map(ref map) => {
+        & MalData::Map(ref map, _) => {
             let mut eval_map: HashMap<MapKey, MalData> = HashMap::new();
 
             let mut iter = map.into_iter();
@@ -559,7 +555,7 @@ fn eval_ast(env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
 
             debug!("eval_ast, eval_map: {:?}", eval_map);
 
-            Ok(MalData::Map(eval_map))
+            Ok(MalData::Map(eval_map, None))
         }
 
         & MalData::Symbol(ref sym) => {
@@ -568,7 +564,7 @@ fn eval_ast(env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
                 .ok_or(EvalError::General(format!("'{}' not found", sym)))
         }
 
-        & MalData::List(ref lst) => {
+        & MalData::List(ref lst, _) => {
             let mut eval_list: Vec<MalData> = Vec::new();
 
             for el in lst.deref() {
@@ -582,7 +578,7 @@ fn eval_ast(env: EnvType, ast: & MalData) -> Result<MalData, EvalError> {
             }
 
             debug!("eval_ast, eval_list: {:?}", eval_list);
-            Ok(MalData::List(Rc::new(eval_list)))
+            Ok(make_mal_list_from_vec(eval_list))
         }
 
         _ => {

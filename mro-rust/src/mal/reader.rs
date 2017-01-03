@@ -1,7 +1,7 @@
 use regex::Regex;
 use std::rc::Rc;
 
-use common::{MalData, make_mal_list_from_vec, make_mal_symbol, make_mal_keyword, make_mal_map_from_kv_list};
+use common::{MalData, make_mal_list_from_vec, make_mal_symbol, make_mal_keyword, make_mal_map_from_kv_list, make_mal_vector_from_vec};
 
 struct Reader<'r> {
     tokens: Vec<&'r str>,
@@ -101,7 +101,7 @@ fn read_form(reader: &mut Reader) -> Result<MalData, String> {
             let next_form = read_form(reader)?;
             let list = vec!(make_mal_symbol("deref"), next_form);
 
-            Ok(MalData::List(Rc::from(list)))
+            Ok(MalData::List(Rc::from(list), None))
         }
 
         // quote
@@ -128,6 +128,14 @@ fn read_form(reader: &mut Reader) -> Result<MalData, String> {
             Ok(make_mal_list_from_vec(vec![ make_mal_symbol("splice-unquote"), read_form(reader)? ]))
         }
 
+        // metadata
+        Some("^") => {
+            reader.next();
+            let meta = read_form(reader)?;
+            let value = read_form(reader)?;
+
+            Ok(make_mal_list_from_vec(vec![ make_mal_symbol("with-meta"), value, meta]))
+        }
         // sonst read_atom mit reader aufrufen
         Some(_) => {
             let atom = read_atom(reader);
@@ -159,14 +167,14 @@ fn read_list(reader: &mut Reader, delim: &str) -> Result<MalData, ReaderError> {
             // die ergebnisse werden in einer liste gesammelt
             (Some(")"), ")") => {
                 reader.next();
-                let list = MalData::List(Rc::new(items));
+                let list = MalData::List(Rc::new(items), None);
                 debug!("< read_list, delim: {}, list: {:?}", delim, list);
                 return Ok(list);
             }
 
             (Some("]"), "]") => {
                 reader.next();
-                let list = MalData::Vector(Rc::new(items));
+                let list = make_mal_vector_from_vec(&items);
                 debug!("< read_list, delim: {}, list: {:?}", delim, list);
                 return Ok(list);
             }

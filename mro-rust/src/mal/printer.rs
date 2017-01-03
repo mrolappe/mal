@@ -38,7 +38,7 @@ impl<'d> PrStr for MalData {
             MalData::Keyword(ref kw) => ":".chars().chain(kw.chars().skip(1)).collect(),
             MalData::Number(ref num) => num.to_string(),  // TODO zahl
 
-            MalData::List(ref elements) => {
+            MalData::List(ref elements, _) => {
                 let mut out = String::from("(");
 
                 out.push_str(join(elements.iter().map(|e| pr_str(e, print_readably)), " ")
@@ -48,7 +48,7 @@ impl<'d> PrStr for MalData {
                 out
             }
 
-            MalData::Vector(ref elements) => {
+            MalData::Vector(ref elements, _) => {
                 let mut out = String::from("[");
 
                 out.push_str(join(elements.iter().map(|e| pr_str(e, print_readably)), " ")
@@ -58,7 +58,7 @@ impl<'d> PrStr for MalData {
                 out
             }
 
-            MalData::Map(ref elements) => {
+            MalData::Map(ref elements, _) => {
                 let mut out = String::from("{");
 
                 out.push_str(join(elements.iter().map(|(k, v)| {
@@ -76,7 +76,7 @@ impl<'d> PrStr for MalData {
             MalData::Function(_) | MalData::FnClosure(_) => "#<function>".to_string(),
 
             MalData::Exception(_) =>
-                "#<exception>".to_string()
+                "#<exception>".to_string(),
         }
     }
 }

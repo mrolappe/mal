@@ -44,7 +44,7 @@ impl Env {
                             rest_exprs.push(expr.clone());
                         }
 
-                        env.set(rest_bind, &MalData::List(Rc::from(rest_exprs)));
+                        env.set(rest_bind, &MalData::List(Rc::from(rest_exprs), None));
 
                         break;
                     } else {
