@@ -653,15 +653,20 @@ fn main() {
     // cond
     rep(env_rc.clone(), "(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))");
 
+    rep(env_rc.clone(), "(def! *gensym-counter* (atom 0))");
+    rep(env_rc.clone(), "(def! gensym (fn* [] (symbol (str \"G__\" (swap! *gensym-counter* (fn* [x] (+ 1 x)))))))");
     // or
-    rep(env_rc.clone(), "(defmacro! or (fn* (& xs) (if (empty? xs) nil (if (= 1 (count xs)) (first xs) `(let* (or_FIXME ~(first xs)) (if or_FIXME or_FIXME (or ~@(rest xs))))))))");
+    rep(env_rc.clone(), "(defmacro! or (fn* (& xs) (if (empty? xs) nil (if (= 1 (count xs)) (first xs) (let* (condvar (gensym)) `(let* (~condvar ~(first xs)) (if ~condvar ~condvar (or ~@(rest xs)))))))))");
+    // rep(env_rc.clone(), "(defmacro! or (fn* (& xs) (if (empty? xs) nil (if (= 1 (count xs)) (first xs) `(let* (or_FIXME ~(first xs)) (if or_FIXME or_FIXME (or ~@(rest xs))))))))");
 
-    let empty_list = MalData::List(Rc::from(vec![]));
+    let empty_list = make_mal_list_from_vec(vec![]);
+
+    env_rc.borrow_mut().set(&"*host-language*".to_string(), &make_mal_string("mro-rust"));
 
     if env::args().len() >= 2 {
         if env::args().len() > 2 {
             let argv_args: Vec<MalData> = env::args().skip(2).map(|a| MalData::String(a)).collect();
-            let argv = MalData::List(Rc::from(argv_args.clone()));
+            let argv = make_mal_list_from_vec(argv_args.clone());
 
             debug!("argv_args: {:?}, argv: {:?}", &argv_args, &argv);
             env_rc.borrow_mut().set(&"*ARGV*".to_owned(), &argv);

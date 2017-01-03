@@ -279,10 +279,10 @@ fn mal_core_read_string(ctx: &FunContext, args: &[MalData]) -> Result<MalData, S
 #[allow(unused_variables)]
 fn mal_core_slurp(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String> {
     if let Some(&MalData::String(ref filename)) = args.get(0) {
-        let mut file = File::open(filename).unwrap();  // TODO fehlerbehandlung
+        let mut file = File::open(filename).map_err( |err| err.to_string() )?;  // TODO fehlerbehandlung
         let mut buffer = String::new();
 
-        file.read_to_string(&mut buffer).unwrap();  // TODO fehlerbehandlung
+        file.read_to_string(&mut buffer).map_err( |err| err.to_string() )?;  // TODO fehlerbehandlung
 
         Ok(MalData::String(buffer))
     } else {
@@ -452,7 +452,7 @@ fn mal_core_first(ctx: &FunContext, args: &[MalData]) -> Result<MalData, String>
         return Ok(MalData::Nil)
     }
 
-    let list = args.get(0).map( |l| get_wrapped_list(l) ).ok_or("list argument required")?.unwrap();
+    let list = args.get(0).map_or(None, |l| get_wrapped_list(l) ).ok_or("list argument required")?;
 
     if list.is_empty() {
         Ok(MalData::Nil)
@@ -967,20 +967,25 @@ pub fn init_ns_map() -> HashMap<&'static str, Rc<CallableFun>> {
     ns_map.insert("vals", Rc::new(mal_core_vals));
     ns_map.insert("sequential?", Rc::new(mal_core_sequential_p));
 
+    ns_map.insert("readline", Rc::new(mal_core_readline));
+    ns_map.insert("string?", Rc::new(mal_core_string_p));
+    ns_map.insert("seq", Rc::new(mal_core_seq));
+    ns_map.insert("conj", Rc::new(mal_core_conj));
+
+    ns_map.insert("time-ms", Rc::new(mal_core_time_ms));
+    ns_map.insert("meta", Rc::new(mal_core_meta));
+    ns_map.insert("with-meta", Rc::new(mal_core_with_meta));
+
     ns_map
 }
 
 
-fn number_arg(arg: &MalData) -> i32 {
-    debug!("number_arg, arg: {:?}", arg);
+fn number_arg(arg: &MalData) -> Option<i32> {
+    trace!("number_arg, arg: {:?}", arg);
 
-    let number = match *arg {
-        MalData::Number(num) => num,
-
-        _ => {
-            panic!("arg ist keine zahl");
-        }// FIXME fehlerbehandlung
-    };
-
-    number
+    if let &MalData::Number(num) = arg {
+        Some(num)
+    } else {
+        None
+    }
 }
