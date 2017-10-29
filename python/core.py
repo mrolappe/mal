@@ -36,12 +36,12 @@ def assoc(src_hm, *key_vals):
 def dissoc(src_hm, *keys):
     hm = copy.copy(src_hm)
     for key in keys:
-        if key in hm: del hm[key]
+        hm.pop(key, None)
     return hm
 
 def get(hm, key):
-    if hm and key in hm:
-        return hm[key]
+    if hm is not None:
+        return hm.get(key)
     else:
         return None
 
@@ -109,8 +109,7 @@ def with_meta(obj, meta):
     return new_obj
 
 def meta(obj):
-    if hasattr(obj, "__meta__"): return obj.__meta__
-    else:                        return None
+    return getattr(obj, "__meta__", None)
 
 
 # Atoms functions

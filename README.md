@@ -6,7 +6,7 @@
 
 Mal is a Clojure inspired Lisp interpreter.
 
-Mal is implemented in 62 languages:
+Mal is implemented in 71 languages:
 
 * Ada
 * GNU awk
@@ -16,13 +16,14 @@ Mal is implemented in 62 languages:
 * C++
 * C#
 * ChucK
-* GNU CLISP
-* Clojure
+* Common Lisp
+* Clojure (Clojure and ClojureScript)
 * CoffeeScript
 * Crystal
 * D
 * Dart
 * Elixir
+* Elm
 * Emacs Lisp
 * Erlang
 * ES6 (ECMAScript 6 / ECMAScript 2015)
@@ -32,18 +33,21 @@ Mal is implemented in 62 languages:
 * Go
 * Groovy
 * GNU Guile
+* GNU Smalltalk
 * Haskell
-* Haxe
+* Haxe (Neko, Python, C++ and JavaScript)
+* Hy
 * Io
 * Java
 * JavaScript ([Online Demo](http://kanaka.github.io/mal))
 * Julia
 * Kotlin
+* LiveScript
 * Logo
 * Lua
 * GNU Make
 * mal itself
-* MATLAB
+* Matlab (GNU Octave and MATLAB)
 * [miniMAL](https://github.com/kanaka/miniMAL)
 * Nim
 * Object Pascal
@@ -57,19 +61,24 @@ Mal is implemented in 62 languages:
 * PL/SQL (Oracle)
 * Postscript
 * PowerShell
-* Python
+* Python (2.X and 3.X)
 * RPython
 * R
 * Racket
+* Rexx
 * Ruby
 * Rust
 * Scala
+* Scheme (R7RS)
+* Skew
 * Swift
 * Swift 3
 * Tcl
+* TypeScript
 * VHDL
 * Vimscript
 * Visual Basic.NET
+* Yorick
 
 
 Mal is a learning tool. See the [make-a-lisp process
@@ -100,7 +109,12 @@ conference (yes the presentation is a mal program). At Midwest.io
 2015, Joel Martin gave a presentation on Mal titled "Achievement
 Unlocked: A Better Path to Language Learning".
 [Video](https://www.youtube.com/watch?v=lgyOAiRtZGw),
-[Slides](http://kanaka.github.io/midwest.io.mal/).
+[Slides](http://kanaka.github.io/midwest.io.mal/). More recently
+Joel gave a presentation on "Make Your Own Lisp Interpreter in
+10 Incremental Steps" at LambdaConf 2016: [Part
+1](https://www.youtube.com/watch?v=jVhupfthTEk), [Part
+2](https://www.youtube.com/watch?v=X5OQBMGpaTU),
+[Slides](http://kanaka.github.io/lambdaconf/).
 
 If you are interesting in creating a mal implementation (or just
 interested in using mal for something), please drop by the #mal
@@ -237,14 +251,17 @@ cd chuck
 ./run
 ```
 
-### GNU CLISP
+### Common Lisp
 
-*The GNU CLISP implementation was created by [Iqbal Ansari](https://github.com/iqbalansari)*
+*The Common Lisp implementation was created by [Iqbal Ansari](https://github.com/iqbalansari)*
 
-The implementation has been tested with GNU CLISP v2.49 on Ubuntu 16.04, 14.04 and 12.04
+The implementation has been tested with SBCL, CCL, CMUCL, GNU CLISP, ECL and
+Allegro CL on Ubuntu 16.04 and Ubuntu 12.04, see
+the [README][common-lisp/README.org] for more details. Provided you have the
+dependencies mentioned installed, do the following to run the implementation
 
 ```
-cd clisp
+cd common-lisp
 make
 ./run
 ```
@@ -332,6 +349,18 @@ cd elixir
 mix stepX_YYY
 # Or with readline/line editing functionality:
 iex -S mix stepX_YYY
+```
+
+### Elm
+
+*The Elm implementation was created by [Jos van Bakel](https://github.com/c0deaddict)*
+
+The Elm implementation of mal has been tested with Elm 0.18.0
+
+```
+cd elm
+make stepX_YYY.js
+STEP=stepX_YYY ./run
 ```
 
 ### Erlang
@@ -430,6 +459,17 @@ cd guile
 guile -L ./ stepX_YYY.scm
 ```
 
+### GNU Smalltalk
+
+*The Smalltalk implementation was created by [Vasilij Schneidermann](https://github.com/wasamasa)*
+
+The Smalltalk implementation of mal has been tested with GNU Smalltalk 3.2.91.
+
+```
+cd gst
+./run
+```
+
 ### Haskell
 
 The Haskell implementation requires the ghc compiler version 7.10.1 or
@@ -441,7 +481,7 @@ make
 ./stepX_YYY
 ```
 
-### Haxe
+### Haxe (Neko, Python, C++ and JavaScript)
 
 The Haxe implementation of mal requires Haxe version 3.2 to compile.
 Four different Haxe targets are supported: Neko, Python, C++, and
@@ -461,6 +501,15 @@ make all-cpp
 # JavaScript
 make all-js
 node ./stepX_YYY.js
+```
+
+### Hy
+
+The Hy implementation of mal has been tested with Hy 0.13.0.
+
+```
+cd hy
+./stepX_YYY.hy
 ```
 
 ### Io
@@ -515,6 +564,18 @@ make
 java -jar stepX_YYY.jar
 ```
 
+### LiveScript
+
+*The LiveScript implementation was created by [Jos van Bakel](https://github.com/c0deaddict)*
+
+The LiveScript implementation of mal has been tested with LiveScript 1.5.
+
+```
+cd livescript
+make
+node_modules/.bin/lsc stepX_YYY.ls
+```
+
 ### Logo
 
 *The Logo implementation was created by [Dov Murik](https://github.com/dubek)*
@@ -556,11 +617,11 @@ cd make
 make -f stepX_YYY.mk
 ```
 
-### Nim 0.15.2
+### Nim 0.17.0
 
 *The Nim implementation was created by [Dennis Felsing (def-)](https://github.com/def-)*
 
-The Nim implementation of mal has been tested with Nim 0.15.2.
+The Nim implementation of mal has been tested with Nim 0.17.0.
 
 ```
 cd nim
@@ -603,18 +664,19 @@ make
 ./stepX_YYY
 ```
 
-### MATLAB
+### MatLab (GNU Octave and MATLAB)
 
-The MATLAB implementation of mal has been tested with MATLAB version
-R2014a on Linux. Note that MATLAB is a commercial product. It should
-be fairly simple to support GNU Octave once it support classdef object
-syntax.
+The MatLab implementation has been tested with GNU Octave 4.2.1.
+It has also been tested with MATLAB version R2014a on Linux. Note that
+MATLAB is a commercial product.
 
 ```
 cd matlab
 ./stepX_YYY
+octave -q --no-gui --no-history --eval "stepX_YYY();quit;"
 matlab -nodisplay -nosplash -nodesktop -nojvm -r "stepX_YYY();quit;"
     # OR with command line arguments
+octave -q --no-gui --no-history --eval "stepX_YYY('arg1','arg2');quit;"
 matlab -nodisplay -nosplash -nodesktop -nojvm -r "stepX_YYY('arg1','arg2');quit;"
 ```
 
@@ -735,7 +797,7 @@ cd powershell
 powershell ./stepX_YYY.ps1
 ```
 
-### Python (2.X or 3.X)
+### Python (2.X and 3.X)
 
 ```
 cd python
@@ -773,6 +835,18 @@ cd racket
 ./stepX_YYY.rkt
 ```
 
+### Rexx
+
+*The Rexx implementation was created by [Dov Murik](https://github.com/dubek)*
+
+The Rexx implementation of mal has been tested with Regina Rexx 3.6.
+
+```
+cd rexx
+make
+rexx -a ./stepX_YYY.rexxpp
+```
+
 ### Ruby (1.9+)
 
 ```
@@ -801,6 +875,52 @@ sbt 'run-main stepX_YYY'
 sbt compile
 scala -classpath target/scala*/classes stepX_YYY
 ```
+
+### Scheme (R7RS) ###
+
+*The Scheme implementation was created by [Vasilij Schneidermann](https://github.com/wasamasa)*
+
+The Scheme implementation of mal has been tested with Chibi-Scheme
+0.7.3, Kawa 2.4, Gauche 0.9.5, CHICKEN 4.11.0, Sagittarius 0.8.3,
+Cyclone 0.6.3 (Git version) and Foment 0.4 (Git version).  You should
+be able to get it running on other conforming R7RS implementations
+after figuring out how libraries are loaded and adjusting the
+`Makefile` and `run` script accordingly.
+
+```
+cd scheme
+make symlinks
+# chibi
+scheme_MODE=chibi ./run
+# kawa
+make kawa
+scheme_MODE=kawa ./run
+# gauche
+scheme_MODE=gauche ./run
+# chicken
+make chicken
+scheme_MODE=chicken ./run
+# sagittarius
+scheme_MODE=sagittarius ./run
+# cyclone
+make cyclone
+scheme_MODE=cyclone ./run
+# foment
+scheme_MODE=foment ./run
+```
+
+### Skew ###
+
+*The Skew implementation was created by [Dov Murik](https://github.com/dubek)*
+
+The Skew implementation of mal has been tested with Skew 0.7.42.
+
+```
+cd skew
+make
+node stepX_YYY.js
+```
+
 
 ### Swift
 
@@ -839,6 +959,19 @@ cd tcl
 tclsh ./stepX_YYY.tcl
 ```
 
+### TypeScript
+
+*The TypeScript implementation was created by [vvakame](https://github.com/vvakame)*
+
+The TypeScript implementation of mal requires the TypeScript 2.2 compiler.
+It has been tested with Node.js v6.
+
+```
+cd ts
+make
+node ./stepX_YYY.js
+```
+
 ### VHDL
 
 *The VHDL implementation was created by [Dov Murik](https://github.com/dubek)*
@@ -872,6 +1005,17 @@ required to build and run the VB.NET implementation.
 cd vb
 make
 mono ./stepX_YYY.exe
+```
+
+### Yorick
+
+*The Yorick implementation was created by [Dov Murik](https://github.com/dubek)*
+
+The Yorick implementation of mal was tested on Yorick 2.2.04.
+
+```
+cd yorick
+yorick -batch ./stepX_YYY.i
 ```
 
 

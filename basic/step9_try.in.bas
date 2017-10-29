@@ -1,5 +1,6 @@
 GOTO MAIN
 
+REM $INCLUDE: 'mem.in.bas'
 REM $INCLUDE: 'types.in.bas'
 REM $INCLUDE: 'readline.in.bas'
 REM $INCLUDE: 'reader.in.bas'
@@ -17,8 +18,9 @@ MAL_READ:
 REM QUASIQUOTE(A) -> R
 SUB QUASIQUOTE
   REM pair?
-  IF (Z%(A,0)AND 31)<6 OR (Z%(A,0)AND 31)>7 THEN GOTO QQ_QUOTE
-  IF (Z%(A,1)=0) THEN GOTO QQ_QUOTE
+  GOSUB TYPE_A
+  IF T<6 OR T>7 THEN GOTO QQ_QUOTE
+  IF (Z%(A+1)=0) THEN GOTO QQ_QUOTE
   GOTO QQ_UNQUOTE
 
   QQ_QUOTE:
@@ -30,35 +32,36 @@ SUB QUASIQUOTE
     GOTO QQ_DONE
 
   QQ_UNQUOTE:
-    R=A+1:GOSUB DEREF_R
-    IF (Z%(R,0)AND 31)<>5 THEN GOTO QQ_SPLICE_UNQUOTE
-    IF S$(Z%(R,1))<>"unquote" THEN GOTO QQ_SPLICE_UNQUOTE
+    R=Z%(A+2)
+    IF (Z%(R)AND 31)<>5 THEN GOTO QQ_SPLICE_UNQUOTE
+    IF S$(Z%(R+1))<>"unquote" THEN GOTO QQ_SPLICE_UNQUOTE
       REM [ast[1]]
-      R=Z%(A,1)+1:GOSUB DEREF_R
-      Z%(R,0)=Z%(R,0)+32
+      R=Z%(Z%(A+1)+2)
+      GOSUB INC_REF_R
 
       GOTO QQ_DONE
 
   QQ_SPLICE_UNQUOTE:
     GOSUB PUSH_A
     REM rest of cases call quasiquote on ast[1..]
-    A=Z%(A,1):CALL QUASIQUOTE
+    A=Z%(A+1):CALL QUASIQUOTE
     W=R
     GOSUB POP_A
 
     REM set A to ast[0] for last two cases
-    A=A+1:GOSUB DEREF_A
+    A=Z%(A+2)
 
     REM pair?
-    IF (Z%(A,0)AND 31)<6 OR (Z%(A,0)AND 31)>7 THEN GOTO QQ_DEFAULT
-    IF (Z%(A,1)=0) THEN GOTO QQ_DEFAULT
+    GOSUB TYPE_A
+    IF T<6 OR T>7 THEN GOTO QQ_DEFAULT
+    IF (Z%(A+1)=0) THEN GOTO QQ_DEFAULT
 
-    B=A+1:GOSUB DEREF_B
-    IF (Z%(B,0)AND 31)<>5 THEN GOTO QQ_DEFAULT
-    IF S$(Z%(B,1))<>"splice-unquote" THEN QQ_DEFAULT
+    B=Z%(A+2)
+    IF (Z%(B)AND 31)<>5 THEN GOTO QQ_DEFAULT
+    IF S$(Z%(B+1))<>"splice-unquote" THEN QQ_DEFAULT
       REM ['concat, ast[0][1], quasiquote(ast[1..])]
 
-      B=Z%(A,1)+1:GOSUB DEREF_B:B=B
+      B=Z%(Z%(A+1)+2)
       B$="concat":T=5:GOSUB STRING:C=R
       A=W:GOSUB LIST3
       REM release inner quasiquoted since outer list takes ownership
@@ -90,20 +93,21 @@ SUB MACROEXPAND
 
   MACROEXPAND_LOOP:
     REM list?
-    IF (Z%(A,0)AND 31)<>6 THEN GOTO MACROEXPAND_DONE
+    GOSUB TYPE_A
+    IF T<>6 THEN GOTO MACROEXPAND_DONE
     REM non-empty?
-    IF Z%(A,1)=0 THEN GOTO MACROEXPAND_DONE
-    B=A+1:GOSUB DEREF_B
+    IF Z%(A+1)=0 THEN GOTO MACROEXPAND_DONE
+    B=Z%(A+2)
     REM symbol? in first position
-    IF (Z%(B,0)AND 31)<>5 THEN GOTO MACROEXPAND_DONE
+    IF (Z%(B)AND 31)<>5 THEN GOTO MACROEXPAND_DONE
     REM defined in environment?
     K=B:CALL ENV_FIND
     IF R=-1 THEN GOTO MACROEXPAND_DONE
-    B=R4:GOSUB DEREF_B
+    B=R4
     REM macro?
-    IF (Z%(B,0)AND 31)<>11 THEN GOTO MACROEXPAND_DONE
+    IF (Z%(B)AND 31)<>11 THEN GOTO MACROEXPAND_DONE
 
-    F=B:AR=Z%(A,1):CALL APPLY
+    F=B:AR=Z%(A+1):CALL APPLY
     A=R
 
     GOSUB PEEK_Q:AY=Q
@@ -126,15 +130,13 @@ SUB EVAL_AST
 
   IF ER<>-2 THEN GOTO EVAL_AST_RETURN
 
-  GOSUB DEREF_A
-
-  T=Z%(A,0)AND 31
+  GOSUB TYPE_A
   IF T=5 THEN GOTO EVAL_AST_SYMBOL
   IF T>=6 AND T<=8 THEN GOTO EVAL_AST_SEQ
 
   REM scalar: deref to actual value and inc ref cnt
-  R=A:GOSUB DEREF_R
-  Z%(R,0)=Z%(R,0)+32
+  R=A
+  GOSUB INC_REF_R
   GOTO EVAL_AST_RETURN
 
   EVAL_AST_SYMBOL:
@@ -143,77 +145,49 @@ SUB EVAL_AST
     GOTO EVAL_AST_RETURN
 
   EVAL_AST_SEQ:
-    REM allocate the first entry (T already set above)
-    L=0:N=0:GOSUB ALLOC
-
-    REM push type of sequence
-    Q=T:GOSUB PUSH_Q
-    REM push sequence index
-    Q=0:GOSUB PUSH_Q
-    REM push future return value (new sequence)
-    GOSUB PUSH_R
-    REM push previous new sequence entry
-    GOSUB PUSH_R
+    REM setup the stack for the loop
+    GOSUB MAP_LOOP_START
 
     EVAL_AST_SEQ_LOOP:
       REM check if we are done evaluating the source sequence
-      IF Z%(A,1)=0 THEN GOTO EVAL_AST_SEQ_LOOP_DONE
+      IF Z%(A+1)=0 THEN GOTO EVAL_AST_SEQ_LOOP_DONE
 
       REM if we are returning to DO, then skip last element
-      Q=6:GOSUB PEEK_Q_Q
-      IF Q=2 AND Z%(Z%(A,1),1)=0 THEN GOTO EVAL_AST_SEQ_LOOP_DONE
+      REM The EVAL_DO call to EVAL_AST must be call #2 for EVAL_AST to
+      REM return early and for TCO to work
+      Q=5:GOSUB PEEK_Q_Q
+      IF Q=2 AND Z%(Z%(A+1)+1)=0 THEN GOTO EVAL_AST_SEQ_LOOP_DONE
 
-      REM if hashmap, skip eval of even entries (keys)
-      Q=3:GOSUB PEEK_Q_Q:T=Q
-      REM get and update index
-      GOSUB PEEK_Q_2
-      Q=Q+1:GOSUB PUT_Q_2
-      IF T=8 AND ((Q-1)AND 1)=0 THEN GOTO EVAL_AST_DO_REF
-      GOTO EVAL_AST_DO_EVAL
+      REM call EVAL for each entry
+      GOSUB PUSH_A
+      IF T<>8 THEN A=Z%(A+2)
+      IF T=8 THEN A=Z%(A+3)
+      Q=T:GOSUB PUSH_Q: REM push/save type
+      CALL EVAL
+      GOSUB POP_Q:T=Q: REM pop/restore type
+      GOSUB POP_A
+      M=R
 
-      EVAL_AST_DO_REF:
-        R=A+1:GOSUB DEREF_R: REM deref to target of referred entry
-        Z%(R,0)=Z%(R,0)+32: REM inc ref cnt of referred value
-        GOTO EVAL_AST_ADD_VALUE
+      REM if error, release the unattached element
+      REM TODO: is R=0 correct?
+      IF ER<>-2 THEN AY=R:GOSUB RELEASE:R=0:GOTO EVAL_AST_SEQ_LOOP_DONE
 
-      EVAL_AST_DO_EVAL:
-        REM call EVAL for each entry
-        A=A+1:CALL EVAL
-        A=A-1
-        GOSUB DEREF_R: REM deref to target of evaluated entry
+      REM for hash-maps, copy the key (inc ref since we are going to
+      REM release it below)
+      IF T=8 THEN N=M:M=Z%(A+2):Z%(M)=Z%(M)+32
 
-      EVAL_AST_ADD_VALUE:
 
-      REM update previous value pointer to evaluated entry
-      GOSUB PEEK_Q
-      Z%(Q+1,1)=R
-
-      IF ER<>-2 THEN GOTO EVAL_AST_SEQ_LOOP_DONE
-
-      REM allocate the next entry
-      REM same new sequence entry type
-      Q=3:GOSUB PEEK_Q_Q:T=Q
-      L=0:N=0:GOSUB ALLOC
-
-      REM update previous sequence entry value to point to new entry
-      GOSUB PEEK_Q
-      Z%(Q,1)=R
-      REM update previous ptr to current entry
-      Q=R:GOSUB PUT_Q
+      REM update the return sequence structure
+      REM release N (and M if T=8) since seq takes full ownership
+      C=1:GOSUB MAP_LOOP_UPDATE
 
       REM process the next sequence entry from source list
-      A=Z%(A,1)
+      A=Z%(A+1)
 
       GOTO EVAL_AST_SEQ_LOOP
     EVAL_AST_SEQ_LOOP_DONE:
-      GOSUB PEEK_Q_1
-      REM if no error, get return value (new seq)
-      IF ER=-2 THEN R=Q
-      REM otherwise, free the return value and return nil
-      IF ER<>-2 THEN R=0:AY=Q:GOSUB RELEASE
-
-      REM pop previous, return, index and type
-      GOSUB POP_Q:GOSUB POP_Q:GOSUB POP_Q:GOSUB POP_Q
+      REM cleanup stack and get return value
+      GOSUB MAP_LOOP_DONE
       GOTO EVAL_AST_RETURN
 
   EVAL_AST_RETURN:
@@ -239,8 +213,6 @@ SUB EVAL
   REM AZ=A:B=1:GOSUB PR_STR
   REM PRINT "EVAL: "+R$+" [A:"+STR$(A)+", LV:"+STR$(LV)+"]"
 
-  GOSUB DEREF_A
-
   GOSUB LIST_Q
   IF R THEN GOTO APPLY_LIST
   EVAL_NOT_LIST:
@@ -255,14 +227,13 @@ SUB EVAL
     IF R<>1 THEN GOTO EVAL_NOT_LIST
 
     GOSUB EMPTY_Q
-    IF R THEN R=A:Z%(R,0)=Z%(R,0)+32:GOTO EVAL_RETURN
+    IF R THEN R=A:GOSUB INC_REF_R:GOTO EVAL_RETURN
 
-    A0=A+1
-    R=A0:GOSUB DEREF_R:A0=R
+    A0=Z%(A+2)
 
     REM get symbol in A$
-    IF (Z%(A0,0)AND 31)<>5 THEN A$=""
-    IF (Z%(A0,0)AND 31)=5 THEN A$=S$(Z%(A0,1))
+    IF (Z%(A0)AND 31)<>5 THEN A$=""
+    IF (Z%(A0)AND 31)=5 THEN A$=S$(Z%(A0+1))
 
     IF A$="def!" THEN GOTO EVAL_DEF
     IF A$="let*" THEN GOTO EVAL_LET
@@ -277,14 +248,11 @@ SUB EVAL
     GOTO EVAL_INVOKE
 
     EVAL_GET_A3:
-      A3=Z%(Z%(Z%(A,1),1),1)+1
-      R=A3:GOSUB DEREF_R:A3=R
+      A3=Z%(Z%(Z%(Z%(A+1)+1)+1)+2)
     EVAL_GET_A2:
-      A2=Z%(Z%(A,1),1)+1
-      R=A2:GOSUB DEREF_R:A2=R
+      A2=Z%(Z%(Z%(A+1)+1)+2)
     EVAL_GET_A1:
-      A1=Z%(A,1)+1
-      R=A1:GOSUB DEREF_R:A1=R
+      A1=Z%(Z%(A+1)+2)
       RETURN
 
     EVAL_DEF:
@@ -312,37 +280,39 @@ SUB EVAL
       C=E:GOSUB ENV_NEW
       E=R
       EVAL_LET_LOOP:
-        IF Z%(A1,1)=0 THEN GOTO EVAL_LET_LOOP_DONE
+        IF Z%(A1+1)=0 THEN GOTO EVAL_LET_LOOP_DONE
 
         Q=A1:GOSUB PUSH_Q: REM push A1
         REM eval current A1 odd element
-        A=Z%(A1,1)+1:CALL EVAL
+        A=Z%(Z%(A1+1)+2):CALL EVAL
         GOSUB POP_Q:A1=Q: REM pop A1
 
         IF ER<>-2 THEN GOTO EVAL_LET_LOOP_DONE
 
-        REM set environment: even A1 key to odd A1 eval'd above
-        K=A1+1:C=R:GOSUB ENV_SET
+        REM set key/value in the environment
+        K=Z%(A1+2):C=R:GOSUB ENV_SET
         AY=R:GOSUB RELEASE: REM release our use, ENV_SET took ownership
 
         REM skip to the next pair of A1 elements
-        A1=Z%(Z%(A1,1),1)
+        A1=Z%(Z%(A1+1)+1)
         GOTO EVAL_LET_LOOP
 
       EVAL_LET_LOOP_DONE:
-        GOSUB POP_Q:E4=Q: REM pop previous env
+        GOSUB POP_Q:AY=Q: REM pop previous env
 
         REM release previous environment if not the current EVAL env
         GOSUB PEEK_Q_2
-        IF E4<>Q THEN AY=E4:GOSUB RELEASE
+        IF AY<>Q THEN GOSUB RELEASE
 
         GOSUB POP_Q:A2=Q: REM pop A2
         A=A2:GOTO EVAL_TCO_RECUR: REM TCO loop
 
     EVAL_DO:
-      A=Z%(A,1): REM rest
+      A=Z%(A+1): REM rest
       GOSUB PUSH_A: REM push/save A
 
+      REM this must be EVAL_AST call #2 for EVAL_AST to return early
+      REM and for TCO to work
       CALL EVAL_AST
 
       REM cleanup
@@ -359,12 +329,12 @@ SUB EVAL
       GOTO EVAL_TCO_RECUR: REM TCO loop
 
     EVAL_QUOTE:
-      R=Z%(A,1)+1:GOSUB DEREF_R
-      Z%(R,0)=Z%(R,0)+32
+      R=Z%(Z%(A+1)+2)
+      GOSUB INC_REF_R
       GOTO EVAL_RETURN
 
     EVAL_QUASIQUOTE:
-      R=Z%(A,1)+1:GOSUB DEREF_R
+      R=Z%(Z%(A+1)+2)
       A=R:CALL QUASIQUOTE
       A=R
       REM add quasiquote result to pending release queue to free when
@@ -382,7 +352,7 @@ SUB EVAL
       GOSUB POP_Q:A1=Q: REM pop A1
 
       REM change function to macro
-      Z%(R,0)=Z%(R,0)+1
+      Z%(R)=Z%(R)+1
 
       REM set A1 in env to A2
       K=A1:C=R:GOSUB ENV_SET
@@ -390,12 +360,12 @@ SUB EVAL
 
     EVAL_MACROEXPAND:
       REM PRINT "macroexpand"
-      R=Z%(A,1)+1:GOSUB DEREF_R
+      R=Z%(Z%(A+1)+2)
       A=R:CALL MACROEXPAND
       R=A
 
       REM since we are returning it unevaluated, inc the ref cnt
-      Z%(R,0)=Z%(R,0)+32
+      GOSUB INC_REF_R
       GOTO EVAL_RETURN
 
     EVAL_TRY:
@@ -407,7 +377,7 @@ SUB EVAL
       GOSUB POP_A: REM pop/restore A
 
       REM if there is not error or catch block then return
-      IF ER=-2 OR Z%(A,1)=0 THEN GOTO EVAL_RETURN
+      IF ER=-2 OR Z%(A+1)=0 THEN GOTO EVAL_RETURN
 
       REM create environment for the catch block eval
       C=E:GOSUB ENV_NEW:E=R
@@ -416,7 +386,7 @@ SUB EVAL
       A=A2:GOSUB EVAL_GET_A2: REM set A1 and A2 from catch block
 
       REM create object for ER=-1 type raw string errors
-      IF ER=-1 THEN B$=E$:T=4:GOSUB STRING:ER=R:Z%(R,0)=Z%(R,0)+32
+      IF ER=-1 THEN B$=E$:T=4:GOSUB STRING:ER=R:GOSUB INC_REF_R
 
       REM bind the catch symbol to the error object
       K=A1:C=ER:GOSUB ENV_SET
@@ -434,7 +404,7 @@ SUB EVAL
       GOSUB PUSH_A: REM push/save A
       A=A1:CALL EVAL
       GOSUB POP_A: REM pop/restore A
-      IF (R=0) OR (R=1) THEN GOTO EVAL_IF_FALSE
+      IF (R=0) OR (R=2) THEN GOTO EVAL_IF_FALSE
 
       EVAL_IF_TRUE:
         AY=R:GOSUB RELEASE
@@ -444,13 +414,13 @@ SUB EVAL
         AY=R:GOSUB RELEASE
         REM if no false case (A3), return nil
         GOSUB COUNT
-        IF R<4 THEN R=0:GOTO EVAL_RETURN
+        IF R<4 THEN R=0:GOSUB INC_REF_R:GOTO EVAL_RETURN
         GOSUB EVAL_GET_A3: REM set A1 - A3 after EVAL
         A=A3:GOTO EVAL_TCO_RECUR: REM TCO loop
 
     EVAL_FN:
       GOSUB EVAL_GET_A2: REM set A1 and A2
-      A=A2:B=A1:GOSUB MAL_FUNCTION
+      T=10:L=A2:M=A1:N=E:GOSUB ALLOC: REM mal function
       GOTO EVAL_RETURN
 
     EVAL_INVOKE:
@@ -462,16 +432,14 @@ SUB EVAL
       REM push f/args for release after call
       GOSUB PUSH_R
 
-      F=R+1
-
-      AR=Z%(R,1): REM rest
-      R=F:GOSUB DEREF_R:F=R
+      AR=Z%(R+1): REM rest
+      F=Z%(R+2)
 
       REM if metadata, get the actual object
-      IF (Z%(F,0)AND 31)>=16 THEN F=Z%(F,1)
+      GOSUB TYPE_F
+      IF T=14 THEN F=Z%(F+1):GOSUB TYPE_F
 
-      IF (Z%(F,0)AND 31)=9 THEN GOTO EVAL_DO_FUNCTION
-      IF (Z%(F,0)AND 31)=10 THEN GOTO EVAL_DO_MAL_FUNCTION
+      ON T-8 GOTO EVAL_DO_FUNCTION,EVAL_DO_MAL_FUNCTION,EVAL_DO_MAL_FUNCTION
 
       REM if error, pop and return f/args for release by caller
       GOSUB POP_R
@@ -479,9 +447,9 @@ SUB EVAL
 
       EVAL_DO_FUNCTION:
         REM regular function
-        IF Z%(F,1)<60 THEN GOSUB DO_FUNCTION:GOTO EVAL_DO_FUNCTION_SKIP
+        IF Z%(F+1)<60 THEN GOSUB DO_FUNCTION:GOTO EVAL_DO_FUNCTION_SKIP
         REM for recur functions (apply, map, swap!), use GOTO
-        IF Z%(F,1)>60 THEN CALL DO_TCO_FUNCTION
+        IF Z%(F+1)>60 THEN CALL DO_TCO_FUNCTION
         EVAL_DO_FUNCTION_SKIP:
 
         REM pop and release f/args
@@ -490,19 +458,20 @@ SUB EVAL
         GOTO EVAL_RETURN
 
       EVAL_DO_MAL_FUNCTION:
-        E4=E: REM save the current environment for release
+        Q=E:GOSUB PUSH_Q: REM save the current environment for release
 
-        REM create new environ using env stored with function
-        C=Z%(F+1,1):A=Z%(F+1,0):B=AR:GOSUB ENV_NEW_BINDS
+        REM create new environ using env and params stored in function
+        C=Z%(F+3):A=Z%(F+2):B=AR:GOSUB ENV_NEW_BINDS
 
         REM release previous env if it is not the top one on the
         REM stack (X%(X-2)) because our new env refers to it and
         REM we no longer need to track it (since we are TCO recurring)
+        GOSUB POP_Q:AY=Q
         GOSUB PEEK_Q_2
-        IF E4<>Q THEN AY=E4:GOSUB RELEASE
+        IF AY<>Q THEN GOSUB RELEASE
 
         REM claim the AST before releasing the list containing it
-        A=Z%(F,1):Z%(A,0)=Z%(A,0)+32
+        A=Z%(F+1):Z%(A)=Z%(A)+32
         REM add AST to pending release queue to free as soon as EVAL
         REM actually returns (LV+1)
         LV=LV+1:GOSUB PEND_A_LV:LV=LV-1
@@ -546,7 +515,7 @@ REM RE(A$) -> R
 REM Assume D has repl_env
 REM caller must release result
 RE:
-  R1=0
+  R1=-1
   GOSUB MAL_READ
   R1=R
   IF ER<>-2 THEN GOTO RE_DONE
@@ -555,29 +524,23 @@ RE:
 
   RE_DONE:
     REM Release memory from MAL_READ
-    IF R1<>0 THEN AY=R1:GOSUB RELEASE
+    AY=R1:GOSUB RELEASE
     RETURN: REM caller must release result of EVAL
 
 REM REP(A$) -> R$
 REM Assume D has repl_env
 SUB REP
-  R1=0:R2=0
-  GOSUB MAL_READ
-  R1=R
-  IF ER<>-2 THEN GOTO REP_DONE
+  R2=-1
 
-  A=R:E=D:CALL EVAL
+  GOSUB RE
   R2=R
   IF ER<>-2 THEN GOTO REP_DONE
 
   A=R:GOSUB MAL_PRINT
-  RT$=R$
 
   REP_DONE:
     REM Release memory from MAL_READ and EVAL
-    IF R2<>0 THEN AY=R2:GOSUB RELEASE
-    IF R1<>0 THEN AY=R1:GOSUB RELEASE
-    R$=RT$
+    AY=R2:GOSUB RELEASE
 END SUB
 
 REM MAIN program
@@ -587,7 +550,7 @@ MAIN:
   LV=0
 
   REM create repl_env
-  C=-1:GOSUB ENV_NEW:D=R
+  C=0:GOSUB ENV_NEW:D=R
 
   REM core.EXT: defined in Basic
   E=D:GOSUB INIT_CORE_NS: REM set core functions in repl_env
@@ -614,6 +577,8 @@ MAIN:
   A$="(def! -*ARGS*- (load-file "+CHR$(34)+".args.mal"+CHR$(34)+"))"
   GOSUB RE:AY=R:GOSUB RELEASE
 
+  IF ER>-2 THEN GOSUB PRINT_ERROR:END
+
   REM set the argument list
   A$="(def! *ARGV* (rest -*ARGS*-))"
   GOSUB RE:AY=R:GOSUB RELEASE
@@ -622,12 +587,14 @@ MAIN:
   A$="(first -*ARGS*-)"
   GOSUB RE
 
-  REM if there is an argument, then run it as a program
-  IF R<>0 THEN AY=R:GOSUB RELEASE:GOTO RUN_PROG
   REM no arguments, start REPL loop
-  IF R=0 THEN GOTO REPL_LOOP
+  IF R<16 THEN GOTO REPL_LOOP
+
+  REM if there is an argument, then run it as a program
 
   RUN_PROG:
+    REM free up first arg because we get it again
+    AY=R:GOSUB RELEASE
     REM run a single mal program and exit
     A$="(load-file (first -*ARGS*-))"
     GOSUB RE
@@ -637,6 +604,7 @@ MAIN:
   REPL_LOOP:
     A$="user> ":GOSUB READLINE: REM call input parser
     IF EZ=1 THEN GOTO QUIT
+    IF R$="" THEN GOTO REPL_LOOP
 
     A$=R$:CALL REP: REM call REP
 
@@ -645,8 +613,9 @@ MAIN:
     GOTO REPL_LOOP
 
   QUIT:
-    REM GOSUB PR_MEMORY_SUMMARY
-    END
+    REM GOSUB PR_MEMORY_SUMMARY_SMALL
+    #cbm END
+    #qbasic SYSTEM
 
   PRINT_ERROR:
     REM if the error is an object, then print and free it
